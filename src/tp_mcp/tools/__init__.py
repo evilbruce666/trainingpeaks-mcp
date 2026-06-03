@@ -38,7 +38,13 @@ from tp_mcp.tools.library import (
     tp_schedule_library_workout,
     tp_update_library_item,
 )
-from tp_mcp.tools.groups import tp_list_athletes_in_group, tp_list_groups
+from tp_mcp.tools.groups import (
+    tp_create_group,
+    tp_delete_group,
+    tp_list_athletes_in_group,
+    tp_list_groups,
+    tp_rename_group,
+)
 from tp_mcp.tools.metrics import tp_get_metrics, tp_get_nutrition, tp_log_metrics
 from tp_mcp.tools.peaks import tp_get_peaks, tp_get_workout_prs
 from tp_mcp.tools.profile import tp_get_profile, tp_list_athletes
@@ -124,6 +130,9 @@ __all__ = [
     "tp_list_athletes",
     "tp_list_groups",
     "tp_list_athletes_in_group",
+    "tp_create_group",
+    "tp_rename_group",
+    "tp_delete_group",
     "tp_get_workouts",
     "tp_log_metrics",
     "tp_pair_workout",
