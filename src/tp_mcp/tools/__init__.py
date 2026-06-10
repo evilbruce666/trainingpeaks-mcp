@@ -2,6 +2,12 @@
 
 from tp_mcp.tools.analyze import tp_analyze_workout
 from tp_mcp.tools.atp import tp_get_atp
+from tp_mcp.tools.strength import (
+    tp_create_strength_workout,
+    tp_delete_strength_workout,
+    tp_get_strength_summary,
+    tp_search_exercises,
+)
 from tp_mcp.tools.auth_status import tp_auth_status
 from tp_mcp.tools.equipment import (
     tp_create_equipment,
@@ -156,4 +162,8 @@ __all__ = [
     "tp_update_workout",
     "tp_upload_workout_file",
     "tp_validate_structure",
+    "tp_search_exercises",
+    "tp_create_strength_workout",
+    "tp_get_strength_summary",
+    "tp_delete_strength_workout",
 ]
