@@ -32,11 +32,14 @@ _WORKOUTS = [
 ]
 
 
-def _client_with(get_side_effect, post=None, athlete_id=123):
+def _client_with(get_side_effect, post=None, post_side_effect=None, athlete_id=123):
     inst = AsyncMock()
     inst.ensure_athlete_id = AsyncMock(return_value=athlete_id)
     inst.get = AsyncMock(side_effect=get_side_effect)
-    inst.post = AsyncMock(return_value=post or APIResponse(success=True, data={"workoutId": 1}))
+    if post_side_effect is not None:
+        inst.post = AsyncMock(side_effect=post_side_effect)
+    else:
+        inst.post = AsyncMock(return_value=post or APIResponse(success=True, data={"workoutId": 1}))
     return inst
 
 
@@ -108,6 +111,8 @@ async def test_get_workouts_lays_out_by_week_day():
 
 @pytest.mark.asyncio
 async def test_apply_copies_workouts_skips_period_markers():
+    """Synthetic apply: each plan workout is recreated at start_date + relative
+    day (structure preserved as a JSON string); type-100 period markers skipped."""
     post = APIResponse(success=True, data={"workoutId": 999})
     inst = _client_with(_get_router, post=post)
     p = _patch(inst)
@@ -115,13 +120,13 @@ async def test_apply_copies_workouts_skips_period_markers():
         r = await tp_apply_training_plan(163992, "2027-09-01")
     finally:
         p.stop()
-    assert r["success"] is True
+    assert r["success"] is True and r["method"] == "synthetic"
     assert r["created"] == 2          # run + day-off
     assert r["skipped_periods"] == 1  # the type-100 annotation
     assert r["failed"] == 0
-    # the run workout was POSTed with its structure as a JSON string at day+1
-    posted = [c.kwargs["json"] for c in inst.post.call_args_list]
-    run_post = next(b for b in posted if b["workoutTypeValueId"] == 3)
+    creates = [c.kwargs["json"] for c in inst.post.call_args_list
+               if "/fitness/v6/" in c.args[0]]
+    run_post = next(b for b in creates if b["workoutTypeValueId"] == 3)
     assert run_post["workoutDay"] == "2027-09-02T00:00:00"  # start_date + rel day 1
     assert run_post["workoutTypeFamilyId"] == 3
     assert isinstance(run_post["structure"], str) and "primaryLengthMetric" in run_post["structure"]
