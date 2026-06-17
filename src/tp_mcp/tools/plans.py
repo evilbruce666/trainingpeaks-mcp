@@ -191,11 +191,23 @@ async def tp_get_training_plan_workouts(plan_id: int | str) -> dict[str, Any]:
         return {"plan_id": v.plan_id, "workouts": out, "count": len(out)}
 
 
+# NB on the NATIVE apply command (reverse-engineered from the web app, NOT used):
+# POST /plans/v1/commands/applyplan with [{athleteId(str), planId, planTitle,
+# startType:1, targetDate}] registers an applied-plan record (returns appliedPlanId)
+# but does NOT materialise the workouts by itself — the web client then DRIVES an
+# async job by repeatedly polling POST /plans/v1/appliedplans/applyPlanStatus until
+# done. That status call's exact body shape isn't pinned (it rejects
+# {"AppliedPlanIds":[...]} with 400) and the protocol is a fragile poll-loop, so we
+# use the SYNTHETIC copy below instead: deterministic, one-shot, fully verified.
+# (Revisit native only with a full HAR of the applyPlanStatus request + its polling.)
+
+
 async def tp_apply_training_plan(plan_id: int | str, start_date: str) -> dict[str, Any]:
     """Apply a plan to the athlete's calendar from ``start_date`` by copying each
-    plan workout to ``start_date + relative_day`` (structure/description/TSS kept).
-    Athlete is resolved from the coach's athlete_override context (the ``athlete``
-    arg, handled by the server dispatch)."""
+    plan workout to ``start_date + relative_day`` (structure/description/TSS
+    preserved); training-period annotation markers are skipped. Athlete is resolved
+    from the coach's athlete_override context (the ``athlete`` arg, handled by the
+    server dispatch)."""
     try:
         v = _ApplyInput(plan_id=plan_id, start_date=start_date)  # type: ignore[arg-type]
     except (ValidationError, ValueError) as e:
@@ -205,6 +217,7 @@ async def tp_apply_training_plan(plan_id: int | str, start_date: str) -> dict[st
         athlete_id = await client.ensure_athlete_id()
         if not athlete_id:
             return _err("AUTH_INVALID", "Could not get athlete ID. Re-authenticate.")
+
         sd, ws = await _fetch_plan_workouts(client, v.plan_id)
         if sd is None:
             return ws  # error dict
@@ -256,6 +269,7 @@ async def tp_apply_training_plan(plan_id: int | str, start_date: str) -> dict[st
 
         result: dict[str, Any] = {
             "success": failed == 0 and created > 0,
+            "method": "synthetic",
             "plan_id": v.plan_id,
             "athlete_id": athlete_id,
             "start_date": v.start_date.isoformat(),
