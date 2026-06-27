@@ -150,10 +150,9 @@ async def tp_list_athletes_in_group(group_id: str) -> dict[str, Any]:
         athletes = []
         for aid in (tag.get("athleteIds") or []):
             a = roster.get(aid)
-            if a is not None:
-                name = f"{a.get('firstName', '')} {a.get('lastName', '')}".strip()
-            else:
-                name = None  # in the group but not in this account's roster
+            # None = athlete is in the group but not in this account's roster
+            name = (f"{a.get('firstName', '')} {a.get('lastName', '')}".strip()
+                    if a is not None else None)
             athletes.append({"athlete_id": aid, "name": name})
         athletes.sort(key=lambda x: (x["name"] or "").lower())
 

@@ -2,12 +2,6 @@
 
 from tp_mcp.tools.analyze import tp_analyze_workout
 from tp_mcp.tools.atp import tp_get_atp
-from tp_mcp.tools.strength import (
-    tp_create_strength_workout,
-    tp_delete_strength_workout,
-    tp_get_strength_summary,
-    tp_search_exercises,
-)
 from tp_mcp.tools.auth_status import tp_auth_status
 from tp_mcp.tools.equipment import (
     tp_create_equipment,
@@ -34,6 +28,15 @@ from tp_mcp.tools.events import (
     tp_update_note,
 )
 from tp_mcp.tools.fitness import tp_get_fitness
+from tp_mcp.tools.groups import (
+    tp_add_athletes_to_group,
+    tp_create_group,
+    tp_delete_group,
+    tp_list_athletes_in_group,
+    tp_list_groups,
+    tp_remove_athletes_from_group,
+    tp_rename_group,
+)
 from tp_mcp.tools.library import (
     tp_create_library,
     tp_create_library_item,
@@ -43,15 +46,6 @@ from tp_mcp.tools.library import (
     tp_get_library_items,
     tp_schedule_library_workout,
     tp_update_library_item,
-)
-from tp_mcp.tools.groups import (
-    tp_add_athletes_to_group,
-    tp_create_group,
-    tp_delete_group,
-    tp_list_athletes_in_group,
-    tp_list_groups,
-    tp_remove_athletes_from_group,
-    tp_rename_group,
 )
 from tp_mcp.tools.metrics import tp_get_metrics, tp_get_nutrition, tp_log_metrics
 from tp_mcp.tools.peaks import tp_get_peaks, tp_get_workout_prs
@@ -71,6 +65,12 @@ from tp_mcp.tools.settings import (
     tp_update_hr_zones,
     tp_update_nutrition,
     tp_update_speed_zones,
+)
+from tp_mcp.tools.strength import (
+    tp_create_strength_workout,
+    tp_delete_strength_workout,
+    tp_get_strength_summary,
+    tp_search_exercises,
 )
 from tp_mcp.tools.structure import tp_validate_structure
 from tp_mcp.tools.weekly_summary import tp_get_weekly_summary
