@@ -134,3 +134,182 @@ async def test_list_athletes_in_group_athlete_not_in_roster():
     # ids preserved, names None (still useful to the caller)
     assert {a["athlete_id"] for a in out["athletes"]} == {201, 202}
     assert all(a["name"] is None for a in out["athletes"])
+
+
+# ── write tools (create / rename / delete) — verified signatures ─────────────
+from tp_mcp.tools.groups import (
+    tp_create_group, tp_delete_group, tp_rename_group,
+)
+
+CREATED = {"id": 337680, "coachId": 1135463, "name": "New", "athleteIds": [], "isDefault": False}
+
+
+@pytest.mark.asyncio
+async def test_create_group_uses_v1_value_body():
+    inst = _client(_get_user_data=USER, post=APIResponse(success=True, data=CREATED))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_create_group("New")
+    assert out["id"] == 337680
+    assert out["name"] == "New"
+    # v1 endpoint + body key "Value" (the verified quirk)
+    inst.post.assert_awaited_once_with(
+        "/coaches/v1/coaches/1135463/tags", json={"Value": "New"})
+
+
+@pytest.mark.asyncio
+async def test_create_group_rejects_empty_name():
+    out = await tp_create_group("   ")
+    assert out["isError"] and out["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_rename_group_puts_value_and_guards_default():
+    inst = _client(
+        _get_user_data=USER,
+        get=APIResponse(success=True, data=TAGS),
+        put=APIResponse(success=True, data={}),
+    )
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_rename_group("11", "Renamed")
+    assert out == {"id": 11, "name": "Renamed"}
+    inst.put.assert_awaited_once_with(
+        "/coaches/v1/coaches/1135463/tags/11", json={"Value": "Renamed"})
+
+
+@pytest.mark.asyncio
+async def test_rename_default_group_forbidden():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS),
+                   put=APIResponse(success=True, data={}))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_rename_group("12", "X")   # 12 is isDefault
+    assert out["isError"] and out["error_code"] == "FORBIDDEN"
+    inst.put.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_group_ok_and_guards_default():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS),
+                   delete=APIResponse(success=True, data=None))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_delete_group("11")
+    assert out["deleted"] is True and out["id"] == 11
+    inst.delete.assert_awaited_once_with("/coaches/v1/coaches/1135463/tags/11")
+
+
+@pytest.mark.asyncio
+async def test_delete_default_group_forbidden():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS),
+                   delete=APIResponse(success=True, data=None))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_delete_group("12")        # default
+    assert out["isError"] and out["error_code"] == "FORBIDDEN"
+    inst.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_unknown_group_not_found():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS),
+                   delete=APIResponse(success=True, data=None))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_delete_group("999")
+    assert out["isError"] and out["error_code"] == "NOT_FOUND"
+
+
+# ── membership (add / remove athletes) — verified signatures ─────────────────
+from tp_mcp.tools.groups import (
+    tp_add_athletes_to_group, tp_remove_athletes_from_group,
+)
+
+
+@pytest.mark.asyncio
+async def test_add_athletes_posts_value_per_athlete():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS),
+                   post=APIResponse(success=True, data={"value": 0}))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_add_athletes_to_group("11", [202, 203])
+    assert out["added"] == [202, 203] and out["errors"] == []
+    # one POST per athlete, body {"Value": id}, to the membership sub-resource
+    assert inst.post.await_count == 2
+    inst.post.assert_any_await(
+        "/coaches/v1/coaches/1135463/tags/11/athletes", json={"Value": 202})
+
+
+@pytest.mark.asyncio
+async def test_remove_athletes_deletes_by_url():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS),
+                   delete=APIResponse(success=True, data={"value": 0}))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_remove_athletes_from_group("11", [202])
+    assert out["removed"] == [202] and out["errors"] == []
+    inst.delete.assert_awaited_once_with(
+        "/coaches/v1/coaches/1135463/tags/11/athletes/202")
+
+
+@pytest.mark.asyncio
+async def test_membership_default_group_forbidden():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS),
+                   post=APIResponse(success=True, data={}))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_add_athletes_to_group("12", [201])   # 12 = isDefault
+    assert out["isError"] and out["error_code"] == "FORBIDDEN"
+    inst.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_membership_validation():
+    out = await tp_add_athletes_to_group("11", [])
+    assert out["isError"] and out["error_code"] == "VALIDATION_ERROR"
+    out2 = await tp_add_athletes_to_group("11", ["abc"])
+    assert out2["isError"] and out2["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_add_athletes_partial_errors():
+    # first ok, second errors → reported per-athlete
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS))
+    inst.post = AsyncMock(side_effect=[
+        APIResponse(success=True, data={"value": 0}),
+        APIResponse(success=False, message="nope"),
+    ])
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_add_athletes_to_group("11", [202, 203])
+    assert out["added"] == [202]
+    assert [e["athlete_id"] for e in out["errors"]] == [203]
+    # partial success is NOT a total failure — no isError envelope
+    assert "isError" not in out
+
+
+@pytest.mark.asyncio
+async def test_add_athletes_total_failure_sets_iserror():
+    # every athlete fails → isError so the caller can't mistake it for success
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS))
+    inst.post = AsyncMock(side_effect=[
+        APIResponse(success=False, message="nope"),
+        APIResponse(success=False, message="nope"),
+    ])
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_add_athletes_to_group("11", [202, 203])
+    assert out["added"] == []
+    assert [e["athlete_id"] for e in out["errors"]] == [202, 203]
+    assert out["isError"] is True and out["error_code"] == "API_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_remove_athletes_total_failure_sets_iserror():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS),
+                   delete=APIResponse(success=False, message="nope"))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_remove_athletes_from_group("11", [202])
+    assert out["removed"] == [] and out["isError"] is True
