@@ -35,6 +35,8 @@ class LogMetricsInput(BaseModel):
     steps: int | None = Field(default=None, ge=0, le=1000000000)
     rmr: int | None = Field(default=None, ge=500, le=5000)
     injury: int | None = Field(default=None, ge=1, le=10)
+    upload_client: str | None = None
+    record_id: str | None = None
 
     @field_validator("date")
     @classmethod
@@ -55,6 +57,8 @@ async def tp_log_metrics(
     steps: int | None = None,
     rmr: int | None = None,
     injury: int | None = None,
+    upload_client: str | None = None,
+    record_id: str | None = None,
 ) -> dict[str, Any]:
     """Log health metrics for a date.
 
@@ -68,6 +72,24 @@ async def tp_log_metrics(
         steps: Step count.
         rmr: Resting metabolic rate (kcal).
         injury: Injury level (1-10).
+        upload_client: Free-text source label attached to each detail (e.g.
+            "WHOOP") — confirmed live (2026-07-15) that the API accepts and
+            persists an arbitrary string here even though TP's own web UI
+            only ever sets this for recognised partner integrations (shows
+            as "Garmin Health" etc there). Omit to leave it null, matching
+            the previous behaviour.
+        record_id: The day's own consolidatedtimedmetric `id` (as returned by
+            tp_get_metrics) — pass it to EDIT that day's record in place
+            instead of creating a new one. Confirmed live: TP matches
+            existing details by (time, type) within the record and updates
+            matching ones (bumps modifiedTime, keeps the SAME group/
+            parentId) rather than appending a duplicate — this only works
+            when `date` matches the target record's day and this call's
+            fields overlap one you already wrote (repeat calls use the
+            same hardcoded T12:00:00 time, so same-day re-writes naturally
+            land on the same slot). Omit (default) to always create a new
+            record — the historical behaviour, safe for the normal
+            one-write-per-day case.
 
     Returns:
         Dict with confirmation or error.
@@ -83,6 +105,8 @@ async def tp_log_metrics(
             steps=steps,
             rmr=rmr,
             injury=injury,
+            upload_client=upload_client,
+            record_id=record_id,
         )
     except (ValidationError, ValueError) as e:
         msg = format_validation_error(e) if isinstance(e, ValidationError) else str(e)
@@ -130,7 +154,7 @@ async def tp_log_metrics(
         details = []
         for key, value in metric_values.items():
             meta = METRIC_TYPES[key]
-            details.append({
+            detail: dict[str, Any] = {
                 "type": meta["type"],
                 "label": meta["label"],
                 "value": value,
@@ -140,12 +164,15 @@ async def tp_log_metrics(
                 "formatedUnits": meta["formatedUnits"],
                 "min": meta["min"],
                 "max": meta["max"],
-            })
+            }
+            if params.upload_client is not None:
+                detail["uploadClient"] = params.upload_client
+            details.append(detail)
 
         payload = {
             "athleteId": athlete_id,
             "timeStamp": f"{params.date}T00:00:00",
-            "id": None,
+            "id": params.record_id,
             "details": details,
         }
 

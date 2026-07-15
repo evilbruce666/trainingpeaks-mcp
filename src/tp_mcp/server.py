@@ -712,6 +712,18 @@ TOOLS = [
                 "steps": {"type": "integer"},
                 "rmr": {"type": "integer"},
                 "injury": {"type": "integer", "description": "1-10"},
+                "upload_client": {
+                    "type": "string",
+                    "description": ("Free-text source label attached to each detail "
+                                   "(e.g. \"WHOOP\"). Omit to leave it null."),
+                },
+                "record_id": {
+                    "type": "string",
+                    "description": ("The day's own record id (from tp_get_metrics) to "
+                                   "EDIT that day's record in place — matching (time, "
+                                   "type) entries are updated, not duplicated. Omit to "
+                                   "always create a new record (default)."),
+                },
             },
             "required": ["date"],
         },
@@ -1600,6 +1612,7 @@ async def _h_log_metrics(args):
         date=args["date"], weight_kg=args.get("weight_kg"), pulse=args.get("pulse"),
         hrv=args.get("hrv"), sleep_hours=args.get("sleep_hours"), spo2=args.get("spo2"),
         steps=args.get("steps"), rmr=args.get("rmr"), injury=args.get("injury"),
+        upload_client=args.get("upload_client"), record_id=args.get("record_id"),
     )
 
 @_handler("tp_get_metrics")

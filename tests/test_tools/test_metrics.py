@@ -72,6 +72,46 @@ class TestLogMetrics:
         assert METRIC_TYPES["spo2"]["type"] == 53
         assert METRIC_TYPES["steps"]["type"] == 58
 
+    @pytest.mark.asyncio
+    async def test_log_metrics_defaults_id_null_and_no_upload_client(self):
+        """Historical behaviour when the new params are omitted: id stays
+        null (always creates a new record) and details carry no uploadClient
+        key at all (was true before this param existed)."""
+        response = APIResponse(success=True, data=None)
+        with patch("tp_mcp.tools.metrics.TPClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.ensure_athlete_id = AsyncMock(return_value=123)
+            mock_instance.post = AsyncMock(return_value=response)
+            mock_client.return_value.__aenter__.return_value = mock_instance
+
+            await tp_log_metrics(date="2026-03-01", hrv=45.0)
+
+        payload = mock_instance.post.call_args[1]["json"]
+        assert payload["id"] is None
+        assert "uploadClient" not in payload["details"][0]
+
+    @pytest.mark.asyncio
+    async def test_log_metrics_upload_client_and_record_id(self):
+        """Confirmed live 2026-07-15 (Андрей Фомин): TP accepts+persists an
+        arbitrary uploadClient string, and passing the day's own record id
+        edits that record's matching (time, type) entries in place rather
+        than creating a duplicate."""
+        response = APIResponse(success=True, data=None)
+        with patch("tp_mcp.tools.metrics.TPClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.ensure_athlete_id = AsyncMock(return_value=123)
+            mock_instance.post = AsyncMock(return_value=response)
+            mock_client.return_value.__aenter__.return_value = mock_instance
+
+            await tp_log_metrics(
+                date="2026-03-01", hrv=45.0, upload_client="WHOOP",
+                record_id="739811",
+            )
+
+        payload = mock_instance.post.call_args[1]["json"]
+        assert payload["id"] == "739811"
+        assert payload["details"][0]["uploadClient"] == "WHOOP"
+
 
 class TestGetMetrics:
     @pytest.mark.asyncio
