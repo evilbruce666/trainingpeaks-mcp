@@ -165,6 +165,111 @@ class TestEnsureAthleteId:
         client.get.assert_not_called()
 
 
+class TestEnsureAthleteIdNameSearch:
+    """Tests for athlete_override name-based resolution (the coach-targeting path)."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        TPClient._cached_athlete_id = None
+        TPClient._cached_user_data = None
+        yield
+        TPClient._cached_athlete_id = None
+        TPClient._cached_user_data = None
+
+    @pytest.fixture(autouse=True)
+    def _clear_override(self):
+        from tp_mcp.client.context import athlete_override
+
+        token = athlete_override.set(None)
+        yield
+        athlete_override.reset(token)
+
+    @staticmethod
+    def _client_with_athletes(athletes: list[dict]) -> TPClient:
+        client = TPClient()
+        client.get = AsyncMock(
+            return_value=APIResponse(
+                success=True,
+                data={"user": {"personId": 1, "email": "coach@x.com", "athletes": athletes}},
+            )
+        )
+        return client
+
+    @pytest.mark.asyncio
+    async def test_resolves_by_clean_full_name(self):
+        from tp_mcp.client.context import athlete_override
+
+        athlete_override.set("Daniil Chervontsev")
+        client = self._client_with_athletes(
+            [{"athleteId": 2380171, "firstName": "Daniil", "lastName": "Chervontsev"}]
+        )
+
+        assert await client.ensure_athlete_id() == 2380171
+
+    @pytest.mark.asyncio
+    async def test_resolves_when_tp_lastname_has_trailing_whitespace(self):
+        """Regression: a real athlete profile had lastName="Chervontsev " (trailing
+        space) — every clean-formatted query used to fail with a misleading
+        AUTH_INVALID/"Could not get athlete ID" even though exactly one athlete
+        matched. Both sides of the comparison must be trimmed."""
+        from tp_mcp.client.context import athlete_override
+
+        athlete_override.set("Daniil Chervontsev")
+        client = self._client_with_athletes(
+            [{"athleteId": 2380171, "firstName": "Daniil", "lastName": "Chervontsev "}]
+        )
+
+        assert await client.ensure_athlete_id() == 2380171
+
+    @pytest.mark.asyncio
+    async def test_resolves_when_query_has_stray_whitespace(self):
+        from tp_mcp.client.context import athlete_override
+
+        athlete_override.set("  Daniil Chervontsev  ")
+        client = self._client_with_athletes(
+            [{"athleteId": 2380171, "firstName": "Daniil", "lastName": "Chervontsev"}]
+        )
+
+        assert await client.ensure_athlete_id() == 2380171
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_name_raises_with_candidate_ids(self):
+        from tp_mcp.client.context import athlete_override
+
+        athlete_override.set("Alexey Kalinin")
+        client = self._client_with_athletes(
+            [
+                {"athleteId": 1, "firstName": "Alexey", "lastName": "Kalinin"},
+                {"athleteId": 2, "firstName": "Alexey", "lastName": "Kalinin"},
+            ]
+        )
+
+        with pytest.raises(ValueError, match="Ambiguous athlete name"):
+            await client.ensure_athlete_id()
+
+    @pytest.mark.asyncio
+    async def test_no_match_returns_none(self):
+        from tp_mcp.client.context import athlete_override
+
+        athlete_override.set("Nobody Here")
+        client = self._client_with_athletes(
+            [{"athleteId": 1, "firstName": "Alexey", "lastName": "Kalinin"}]
+        )
+
+        assert await client.ensure_athlete_id() is None
+
+    @pytest.mark.asyncio
+    async def test_numeric_override_resolves_by_id(self):
+        from tp_mcp.client.context import athlete_override
+
+        athlete_override.set("2380171")
+        client = self._client_with_athletes(
+            [{"athleteId": 2380171, "firstName": "Daniil", "lastName": "Chervontsev "}]
+        )
+
+        assert await client.ensure_athlete_id() == 2380171
+
+
 class TestSharedTokenCache:
     """Tests for shared TokenCache across TPClient instances."""
 

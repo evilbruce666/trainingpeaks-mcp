@@ -644,12 +644,18 @@ class TPClient:
                         athlete_id = target_id
                         break
             except ValueError:
-                # Search by name (case-insensitive), detecting ambiguity
-                search = athlete.lower()
+                # Search by name (case-insensitive), detecting ambiguity.
+                # TP's own firstName/lastName fields sometimes carry stray
+                # leading/trailing whitespace (seen live on a real athlete
+                # profile — lastName="Chervontsev " with a trailing space),
+                # which would silently fail every future name-based lookup
+                # for that athlete otherwise. Strip both sides before
+                # comparing so a clean query still matches a dirty profile.
+                search = athlete.strip().lower()
                 matches = []
                 for a in athletes:
-                    first = (a.get("firstName") or "").lower()
-                    last = (a.get("lastName") or "").lower()
+                    first = (a.get("firstName") or "").strip().lower()
+                    last = (a.get("lastName") or "").strip().lower()
                     full = f"{first} {last}"
                     if search in (first, last, full):
                         matches.append(a)
