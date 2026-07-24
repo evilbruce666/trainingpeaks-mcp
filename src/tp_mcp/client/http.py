@@ -75,6 +75,14 @@ def _is_forbidden(endpoint: str) -> bool:
     return any(bad in endpoint for bad in _FORBIDDEN_ENDPOINTS)
 
 
+def _collapse_ws(value: str | None) -> str:
+    """Lower-case with whitespace runs collapsed to single spaces and ends
+    trimmed — the normal form used to compare athlete names, since TP profiles
+    carry stray spaces that would otherwise break name lookups (see
+    ``ensure_athlete_id``)."""
+    return " ".join((value or "").split()).lower()
+
+
 @dataclass
 class APIResponse:
     """Wrapper for API responses."""
@@ -646,17 +654,21 @@ class TPClient:
             except ValueError:
                 # Search by name (case-insensitive), detecting ambiguity.
                 # TP's own firstName/lastName fields sometimes carry stray
-                # leading/trailing whitespace (seen live on a real athlete
-                # profile — lastName="Chervontsev " with a trailing space),
-                # which would silently fail every future name-based lookup
-                # for that athlete otherwise. Strip both sides before
-                # comparing so a clean query still matches a dirty profile.
-                search = athlete.strip().lower()
+                # whitespace (seen live: lastName="Chervontsev " with a
+                # trailing space, and firstName="kairat " which makes the
+                # composed full name "kairat  pazylbekov" — note the DOUBLE
+                # space). Callers, in turn, often hold the name exactly as
+                # some earlier listing rendered it, doubled space and all.
+                # Collapse whitespace RUNS on both sides, not just trim the
+                # ends: trimming alone fixes the trailing-space profile but
+                # then turns "kairat  pazylbekov" into a single-space name
+                # that no longer matches the caller's doubled-space copy.
+                search = _collapse_ws(athlete)
                 matches = []
                 for a in athletes:
-                    first = (a.get("firstName") or "").strip().lower()
-                    last = (a.get("lastName") or "").strip().lower()
-                    full = f"{first} {last}"
+                    first = _collapse_ws(a.get("firstName"))
+                    last = _collapse_ws(a.get("lastName"))
+                    full = _collapse_ws(f"{first} {last}")
                     if search in (first, last, full):
                         matches.append(a)
 

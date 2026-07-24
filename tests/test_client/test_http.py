@@ -222,6 +222,24 @@ class TestEnsureAthleteIdNameSearch:
         assert await client.ensure_athlete_id() == 2380171
 
     @pytest.mark.asyncio
+    async def test_resolves_when_composed_name_has_doubled_space(self):
+        """Regression on the trailing-space fix itself: a real profile has
+        firstName="kairat " (trailing space), so the name every listing renders
+        for that athlete is "kairat  pazylbekov" with a DOUBLE space — and that
+        is exactly the string callers hold and query by. Trimming the parts
+        individually turns the profile side into a single-space name and breaks
+        the very lookups the trailing-space fix was meant to repair; whitespace
+        RUNS have to be collapsed on both sides."""
+        from tp_mcp.client.context import athlete_override
+
+        athlete_override.set("kairat  pazylbekov")
+        client = self._client_with_athletes(
+            [{"athleteId": 2153970, "firstName": "kairat ", "lastName": "pazylbekov"}]
+        )
+
+        assert await client.ensure_athlete_id() == 2153970
+
+    @pytest.mark.asyncio
     async def test_resolves_when_query_has_stray_whitespace(self):
         from tp_mcp.client.context import athlete_override
 
