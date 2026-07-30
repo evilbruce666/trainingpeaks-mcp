@@ -23,7 +23,7 @@ Ask your AI assistant things like:
 - "Set my FTP to 310 and update my power zones"
 - "Add a calendar note for next Monday: rest day, travel"
 
-## Tools (78)
+## Tools (84)
 
 ### Workouts
 | Tool | Description |
@@ -150,6 +150,14 @@ honoured exactly. They update a **threshold** (FTP / LTHR / threshold pace).
 | `tp_add_athletes_to_group` | Add one or more athletes to a group |
 | `tp_remove_athletes_from_group` | Remove one or more athletes from a group |
 
+### Training Plans (multi-week)
+| Tool | Description |
+|------|-------------|
+| `tp_list_training_plans` | List the coach's authored multi-week training plans |
+| `tp_get_training_plan` | Summary of one plan: weeks, per-week duration/distance, sport breakdown |
+| `tp_get_training_plan_workouts` | All workouts of a plan laid out by week/day |
+| `tp_apply_training_plan` | Apply a plan to an athlete's calendar from a start date (safe synthetic copy) |
+
 ### Reference & Auth
 | Tool | Description |
 |------|-------------|
@@ -160,6 +168,25 @@ honoured exactly. They update a **threshold** (FTP / LTHR / threshold pace).
 | `tp_refresh_auth` | Re-authenticate from browser cookie |
 
 ---
+
+## MCP Apps (inline charts)
+
+On clients that support the MCP Apps extension (spec 2026-07-28), some tools render an
+interactive UI inline in the conversation as well as returning their normal text payload.
+On every other client the tools behave exactly as before - the text answer is always
+complete on its own.
+
+![PMC fitness chart rendered inline](docs/images/pmc-chart-app.png)
+
+| Tool | App |
+|------|-----|
+| `tp_get_fitness` | Interactive CTL/ATL/TSB performance-management chart |
+| `tp_get_weekly_summary` | Week card: per-day load bars, planned vs completed, totals |
+| `tp_get_workout` | Interval-profile viewer for structured workouts (summary fallback otherwise) |
+
+*(Note: as of July 2026, Claude clients still connect to local stdio servers over the
+pre-2026 protocol, so the apps ship ready but won't render until client support rolls
+out. The tools' text output is unaffected either way.)*
 
 ## Setup Options
 
@@ -192,7 +219,7 @@ pip install -e .
 If you're logged into TrainingPeaks in your browser:
 
 ```bash
-pip install tp-mcp[browser]  # One-time: install browser support
+pip install -e ".[browser]"  # One-time: install browser support
 tp-mcp auth --from-browser chrome  # Or: firefox, safari, edge, auto
 ```
 
@@ -420,6 +447,19 @@ pytest tests/ -v
 mypy src/
 ruff check src/
 ```
+
+### Adding a tool
+
+Every tool automatically gets a display title and behaviour annotations
+(`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`),
+derived from its name by the metadata block at the bottom of
+`src/tp_mcp/server.py`. Name your tool by the conventions
+(`tp_get_*`/`tp_list_*` for reads, `tp_delete_*` for destructive removals,
+`tp_create_*`/`tp_add_*` for creates) and it needs nothing extra; if it
+doesn't fit the conventions, add it to the exception sets next to that block
+(`_DESTRUCTIVE_TOOLS`, `_NON_IDEMPOTENT_WRITES`, `_READ_ONLY_EXTRA`,
+`_TITLE_OVERRIDES`). `tests/test_tool_metadata.py` fails with instructions if
+a tool is misclassified, and the README tool tables above should gain a row.
 
 ## Licence
 
