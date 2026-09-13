@@ -81,6 +81,25 @@ class TestValidateAuth:
             assert result.athlete_id == 1000001
 
     @pytest.mark.asyncio
+    async def test_null_token_is_transient_not_a_crash(self):
+        """200 with ``"token": null`` (TP glitch, 13.09.2026) must not raise —
+        the startup validator turns it into a warning and the server starts."""
+        token_response = MagicMock()
+        token_response.status_code = 200
+        token_response.json.return_value = {"token": None}
+
+        with patch("tp_mcp.auth.validator.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = token_response
+            mock_client.return_value.__aenter__.return_value = mock_instance
+
+            result = await validate_auth("valid_cookie")
+
+            assert result.is_valid is False
+            assert result.status == AuthStatus.NETWORK_ERROR
+            assert "no access token" in result.message
+
+    @pytest.mark.asyncio
     async def test_expired_auth(self):
         """Test validation with expired cookie."""
         mock_response = MagicMock()

@@ -308,8 +308,17 @@ class TPClient:
             if not result.success:
                 return result
 
-            # Cache the token
-            token_data = result.data["token"]  # type: ignore[index, call-overload]
+            # Cache the token. TP occasionally answers 200 with
+            # ``"token": null`` (transient, see auth/validator.py) — surface
+            # it as a retryable network error instead of a TypeError.
+            token_data = (result.data or {}).get("token")  # type: ignore[union-attr]
+            if not isinstance(token_data, dict) or not token_data.get("access_token"):
+                return APIResponse(
+                    success=False,
+                    error_code=ErrorCode.NETWORK_ERROR,
+                    message=("TrainingPeaks token endpoint returned no access "
+                             "token (transient) — retry the request."),
+                )
             self._token_cache.access_token = token_data["access_token"]
             expires_in = token_data.get("expires_in", 3600)
             self._token_cache.expires_at = time.time() + expires_in

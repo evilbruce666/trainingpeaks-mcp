@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from tp_mcp.client.http import MIN_REQUEST_INTERVAL, APIResponse, TPClient
+from tp_mcp.client.http import MIN_REQUEST_INTERVAL, APIResponse, ErrorCode, TPClient
 
 
 class TestThrottling:
@@ -309,6 +309,28 @@ class TestSharedTokenCache:
         assert TPClient._shared_token_cache is None
         TPClient()
         assert TPClient._shared_token_cache is not None
+
+
+class TestNullTokenExchange:
+    """TP occasionally answers the token exchange with 200 + ``"token": null``
+    (13.09.2026, ten times over three minutes). The runtime path used to raise
+    TypeError inside the tool call; now it is a retryable NETWORK_ERROR."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        TPClient._shared_token_cache = None
+        yield
+        TPClient._shared_token_cache = None
+
+    @pytest.mark.asyncio
+    async def test_null_token_is_retryable_error(self):
+        client = TPClient()
+        client._exchange_cookie_for_token = AsyncMock(
+            return_value=APIResponse(success=True, data={"token": None}))
+        result = await client._ensure_access_token()
+        assert result.success is False
+        assert result.error_code == ErrorCode.NETWORK_ERROR
+        assert client._token_cache.access_token is None
 
 
 class TestHandleResponse:

@@ -63,7 +63,20 @@ async def validate_auth(cookie: str) -> AuthResult:
 
             if response.status_code == 200:
                 data = response.json()
-                token_info = data.get("token", {})
+                # TP occasionally answers 200 with ``"token": null`` (seen
+                # 13.09.2026, ten times over three minutes, then fine again).
+                # ``data.get("token", {})`` returns that None as-is, and the
+                # AttributeError below killed the server on startup — the
+                # desktop app retried, hit the same glitch, and dropped the
+                # connector for every session. Treat it as a transient
+                # failure: the server still starts and tool calls retry.
+                token_info = data.get("token") or {}
+                if not isinstance(token_info, dict) or not token_info.get("access_token"):
+                    return AuthResult(
+                        status=AuthStatus.NETWORK_ERROR,
+                        message=("Token endpoint returned no access token "
+                                 "(transient TrainingPeaks glitch) — retry."),
+                    )
                 access_token = token_info.get("access_token")
 
                 # Token endpoint only returns the token, not user info.
