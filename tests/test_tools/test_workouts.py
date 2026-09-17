@@ -821,3 +821,58 @@ class TestTpPairWorkout:
 
         assert result["isError"] is True
         assert result["error_code"] == "API_ERROR"
+
+
+class TestTpGetWorkoutsListFields:
+    """The v6 calendar list already carries comments / type / timestamps —
+    exposing them means a roster poller needs ONE request per athlete, not one
+    per workout."""
+
+    @pytest.fixture
+    def list_with_comments(self, mock_api_responses):
+        data = json.loads(json.dumps(mock_api_responses["workouts"]))
+        data[0]["workoutComments"] = [
+            {"id": 1, "comment": "было тяжело", "isCoach": False,
+             "dateCreated": "2025-01-08T10:00:00", "commenterName": "A"},
+            {"id": 2, "comment": "ок", "isCoach": True,
+             "dateCreated": "2025-01-08T11:00:00", "commenterName": "C"},
+        ]
+        data[0]["lastModifiedDate"] = "2025-01-08T12:00:00"
+        data[0]["startTime"] = "2025-01-08T06:30:00"
+        data[0]["tssSource"] = 4
+        data[0]["rpe"] = 7
+        data[0]["feeling"] = 5
+        return data
+
+    async def _run(self, data, **kw):
+        response = APIResponse(success=True, data=data)
+        with patch("tp_mcp.tools.workouts.TPClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.ensure_athlete_id = AsyncMock(return_value=123)
+            mock_instance.get = AsyncMock(return_value=response)
+            mock_client.return_value.__aenter__.return_value = mock_instance
+            return await tp_get_workouts("2025-01-08", "2025-01-09", **kw)
+
+    @pytest.mark.asyncio
+    async def test_default_listing_stays_compact_but_counts_comments(self, list_with_comments):
+        result = await self._run(list_with_comments)
+        w0, w1 = result["workouts"]
+        assert "comments" not in w0 and "comments" not in w1
+        assert w0["comment_count"] == 2
+        assert w1["comment_count"] == 0
+        assert w0["workout_type"] == 2
+        assert w0["start_time"] == "2025-01-08T06:30:00"
+        assert w0["last_modified"] == "2025-01-08T12:00:00"
+        assert w0["tss_source"] == 4
+        assert w0["rpe"] == 7 and w0["feeling"] == 5
+        # A workout without the optional fields still parses (None, not error).
+        assert w1["start_time"] is None and w1["rpe"] is None
+
+    @pytest.mark.asyncio
+    async def test_include_comments_returns_the_raw_objects(self, list_with_comments):
+        result = await self._run(list_with_comments, include_comments=True)
+        w0, w1 = result["workouts"]
+        # Same raw objects tp_get_workout_comments returns — consumers can
+        # share one normaliser for both paths.
+        assert w0["comments"] == list_with_comments[0]["workoutComments"]
+        assert w1["comments"] == []
