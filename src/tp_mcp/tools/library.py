@@ -561,6 +561,58 @@ async def tp_update_library_item(
         }
 
 
+async def tp_delete_library_item(library_id: str, item_id: str) -> dict[str, Any]:
+    """Delete a single workout template from a library.
+
+    Irreversible. Workouts already scheduled from the template are copies
+    and stay on the calendar.
+
+    Args:
+        library_id: Library ID.
+        item_id: Item ID.
+
+    Returns:
+        Dict with confirmation or error.
+    """
+    try:
+        lib_validated = WorkoutIdInput(workout_id=library_id)
+        item_validated = WorkoutIdInput(workout_id=item_id)
+    except (ValidationError, ValueError) as e:
+        msg = format_validation_error(e) if isinstance(e, ValidationError) else str(e)
+        return {
+            "isError": True,
+            "error_code": "VALIDATION_ERROR",
+            "message": msg,
+        }
+
+    async with TPClient() as client:
+        athlete_id = await client.ensure_athlete_id()
+        if not athlete_id:
+            return {
+                "isError": True,
+                "error_code": "AUTH_INVALID",
+                "message": "Could not get athlete ID. Re-authenticate.",
+            }
+
+        endpoint = (
+            f"/exerciselibrary/v1/libraries/{lib_validated.workout_id}"
+            f"/items/{item_validated.workout_id}"
+        )
+        response = await client.delete(endpoint)
+
+        if response.is_error:
+            return {
+                "isError": True,
+                "error_code": response.error_code.value if response.error_code else "API_ERROR",
+                "message": response.message,
+            }
+
+        return {
+            "success": True,
+            "message": f"Library item {item_validated.workout_id} deleted.",
+        }
+
+
 def _template_workout_payload(
     item: dict[str, Any], date: str, athlete_id: int
 ) -> dict[str, Any]:

@@ -50,6 +50,7 @@ from tp_mcp.tools import (
     tp_delete_event,
     tp_delete_group,
     tp_delete_library,
+    tp_delete_library_item,
     tp_delete_note,
     tp_delete_strength_workout,
     tp_delete_workout,
@@ -1162,13 +1163,22 @@ TOOLS = [
     Tool(
         name="tp_delete_library",
         description=(
-            "Permanently delete a library AND every template inside it - irreversible, and there is no per- "
-            "template delete. Schedule anything you want to keep first."
+            "Permanently delete a library AND every template inside it - irreversible. "
+            "To remove one template use tp_delete_library_item."
         ),
         input_schema={
             "type": "object",
             "properties": {"library_id": {"type": "string"}},
             "required": ["library_id"],
+        },
+    ),
+    Tool(
+        name="tp_delete_library_item",
+        description="Permanently delete one workout template from a library (irreversible).",
+        input_schema={
+            "type": "object",
+            "properties": {"library_id": {"type": "string"}, "item_id": {"type": "string"}},
+            "required": ["library_id", "item_id"],
         },
     ),
     Tool(
@@ -1552,6 +1562,7 @@ _DESTRUCTIVE_TOOLS = {
     "tp_delete_event",
     "tp_delete_group",
     "tp_delete_library",
+    "tp_delete_library_item",
     "tp_delete_note",
     "tp_delete_strength_workout",
     "tp_delete_workout",
@@ -2036,6 +2047,10 @@ async def _h_create_lib(args): return await tp_create_library(name=args["name"])
 
 @_handler("tp_delete_library")
 async def _h_delete_lib(args): return await tp_delete_library(library_id=args["library_id"])
+
+@_handler("tp_delete_library_item")
+async def _h_delete_lib_item(args):
+    return await tp_delete_library_item(library_id=args["library_id"], item_id=args["item_id"])
 
 @_handler("tp_create_library_item")
 async def _h_create_lib_item(args):

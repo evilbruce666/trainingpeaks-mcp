@@ -94,6 +94,7 @@ class TestListTools:
             "tp_get_library_item",
             "tp_create_library",
             "tp_delete_library",
+            "tp_delete_library_item",
             "tp_create_library_item",
             "tp_update_library_item",
             "tp_schedule_library_workout",

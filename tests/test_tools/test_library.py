@@ -10,6 +10,7 @@ from tp_mcp.tools.library import (
     tp_create_library,
     tp_create_library_item,
     tp_delete_library,
+    tp_delete_library_item,
     tp_get_libraries,
     tp_get_library_items,
     tp_schedule_library_workout,
@@ -579,3 +580,33 @@ class TestLibraryItemIfPlanned:
             await tp_update_library_item(library_id="1", item_id="31", tss=75.5, if_planned=0.84)
             payload = mock_instance.put.call_args[1]["json"]
             assert payload["ifPlanned"] == 0.84
+
+
+class TestDeleteLibraryItem:
+    @pytest.mark.asyncio
+    async def test_delete_hits_item_endpoint(self):
+        with patch("tp_mcp.tools.library.TPClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.ensure_athlete_id = AsyncMock(return_value=123)
+            mock_instance.delete = AsyncMock(return_value=APIResponse(success=True, data=None))
+            mock_client.return_value.__aenter__.return_value = mock_instance
+
+            result = await tp_delete_library_item(library_id="1", item_id="20")
+
+        assert result["success"] is True
+        assert mock_instance.delete.call_args[0][0] == "/exerciselibrary/v1/libraries/1/items/20"
+
+    @pytest.mark.asyncio
+    async def test_delete_surfaces_api_error(self):
+        from tp_mcp.client.http import ErrorCode
+        with patch("tp_mcp.tools.library.TPClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.ensure_athlete_id = AsyncMock(return_value=123)
+            mock_instance.delete = AsyncMock(return_value=APIResponse(
+                success=False, error_code=ErrorCode.NOT_FOUND, message="gone"))
+            mock_client.return_value.__aenter__.return_value = mock_instance
+
+            result = await tp_delete_library_item(library_id="1", item_id="20")
+
+        assert result["isError"] is True
+        assert result["error_code"] == "NOT_FOUND"
