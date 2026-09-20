@@ -354,6 +354,7 @@ async def tp_create_library_item(
     tss: float | None = None,
     description: str | None = None,
     structure: dict[str, Any] | None = None,
+    if_planned: float | None = None,
 ) -> dict[str, Any]:
     """Save a workout template to a library.
 
@@ -366,6 +367,9 @@ async def tp_create_library_item(
         tss: Optional planned TSS.
         description: Optional description.
         structure: Optional interval structure (nested object, NOT string).
+        if_planned: Optional planned intensity factor (e.g. 0.84). TP does
+            not derive it from ``tss``/``duration_hours``, so pass it when
+            you pass ``tss`` or the template shows a stale/empty IF.
 
     Returns:
         Dict with confirmation or error.
@@ -410,6 +414,8 @@ async def tp_create_library_item(
             payload["totalTimePlanned"] = duration_hours
         if tss is not None:
             payload["tssPlanned"] = tss
+        if if_planned is not None:
+            payload["ifPlanned"] = if_planned
         if description:
             payload["description"] = description
         if structure is not None:
@@ -449,6 +455,7 @@ async def tp_update_library_item(
     structure: dict[str, Any] | None = None,
     workout_type_id: int | None = None,
     workout_sub_type_id: int | None = None,
+    if_planned: float | None = None,
 ) -> dict[str, Any]:
     """Edit a workout template.
 
@@ -463,6 +470,9 @@ async def tp_update_library_item(
         workout_type_id: Optional sport/workout type (1=swim, 2=bike, 3=run, ...).
             Use to set the sport on templates that were saved without one.
         workout_sub_type_id: Optional workout subtype id (e.g. 6=Indoor Bike).
+        if_planned: Optional planned intensity factor. Updating ``tss`` alone
+            leaves the stored IF untouched (TP does not recompute it), so pass
+            both when retargeting a template.
 
     Returns:
         Dict with confirmation or error.
@@ -521,6 +531,8 @@ async def tp_update_library_item(
             existing["totalTimePlanned"] = duration_hours
         if tss is not None:
             existing["tssPlanned"] = tss
+        if if_planned is not None:
+            existing["ifPlanned"] = if_planned
         if description is not None:
             existing["description"] = description
         if structure is not None:

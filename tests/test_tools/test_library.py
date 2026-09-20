@@ -533,3 +533,49 @@ class TestScheduleLibraryWorkoutBulk:
         assert result["isError"] is True
         assert result["error_code"] == "VALIDATION_ERROR"
         mock_client.assert_not_called()
+
+
+class TestLibraryItemIfPlanned:
+    """`ifPlanned` is stored verbatim by TP and never derived from tss/duration,
+    so both create and update must be able to set it explicitly."""
+
+    @pytest.mark.asyncio
+    async def test_create_sends_if_planned(self):
+        response = APIResponse(success=True, data={"exerciseLibraryItemId": 30})
+        with patch("tp_mcp.tools.library.TPClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.ensure_athlete_id = AsyncMock(return_value=123)
+            mock_instance.post = AsyncMock(return_value=response)
+            mock_client.return_value.__aenter__.return_value = mock_instance
+
+            result = await tp_create_library_item(
+                library_id="1", name="Threshold",
+                sport_family_id=2, sport_type_id=3,
+                tss=75.5, if_planned=0.84,
+            )
+
+        assert result["success"] is True
+        payload = mock_instance.post.call_args[1]["json"]
+        assert payload["tssPlanned"] == 75.5
+        assert payload["ifPlanned"] == 0.84
+
+    @pytest.mark.asyncio
+    async def test_update_overwrites_stale_if_and_leaves_it_when_omitted(self):
+        existing = {"exerciseLibraryItemId": 31, "itemName": "T", "workoutTypeId": 2,
+                    "tssPlanned": 66.3, "ifPlanned": 0.79}
+        put_resp = APIResponse(success=True, data=None)
+        with patch("tp_mcp.tools.library.TPClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.ensure_athlete_id = AsyncMock(return_value=123)
+            mock_instance.get = AsyncMock(return_value=APIResponse(success=True, data=[dict(existing)]))
+            mock_instance.put = AsyncMock(return_value=put_resp)
+            mock_client.return_value.__aenter__.return_value = mock_instance
+
+            await tp_update_library_item(library_id="1", item_id="31", tss=75.5)
+            payload = mock_instance.put.call_args[1]["json"]
+            assert payload["ifPlanned"] == 0.79          # omitted → untouched (TP would keep it too)
+
+            mock_instance.get = AsyncMock(return_value=APIResponse(success=True, data=[dict(existing)]))
+            await tp_update_library_item(library_id="1", item_id="31", tss=75.5, if_planned=0.84)
+            payload = mock_instance.put.call_args[1]["json"]
+            assert payload["ifPlanned"] == 0.84

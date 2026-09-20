@@ -1191,6 +1191,10 @@ TOOLS = [
                 "tss": {"type": "number"},
                 "description": {"type": "string"},
                 "structure": {"type": "object", "description": "Interval structure (nested object)"},
+                "if_planned": {
+                    "type": "number",
+                    "description": "Planned intensity factor (e.g. 0.84); TP does not derive it from tss",
+                },
             },
             "required": ["library_id", "name", "sport_family_id", "sport_type_id"],
         },
@@ -1216,6 +1220,13 @@ TOOLS = [
                     ),
                 },
                 "workout_sub_type_id": {"type": "integer"},
+                "if_planned": {
+                    "type": "number",
+                    "description": (
+                        "Planned intensity factor; pass with tss when retargeting "
+                        "(TP keeps the old IF otherwise)"
+                    ),
+                },
             },
             "required": ["library_id", "item_id"],
         },
@@ -2033,6 +2044,7 @@ async def _h_create_lib_item(args):
         sport_family_id=args["sport_family_id"], sport_type_id=args["sport_type_id"],
         duration_hours=args.get("duration_hours"), tss=args.get("tss"),
         description=args.get("description"), structure=args.get("structure"),
+        if_planned=args.get("if_planned"),
     )
 
 @_handler("tp_update_library_item")
@@ -2044,6 +2056,7 @@ async def _h_update_lib_item(args):
         structure=args.get("structure"),
         workout_type_id=args.get("workout_type_id"),
         workout_sub_type_id=args.get("workout_sub_type_id"),
+        if_planned=args.get("if_planned"),
     )
 
 @_handler("tp_schedule_library_workout")
