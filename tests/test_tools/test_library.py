@@ -552,13 +552,14 @@ class TestLibraryItemIfPlanned:
             result = await tp_create_library_item(
                 library_id="1", name="Threshold",
                 sport_family_id=2, sport_type_id=3,
-                tss=75.5, if_planned=0.84,
+                tss=75.5, if_planned=0.84, distance_meters=2000,
             )
 
         assert result["success"] is True
         payload = mock_instance.post.call_args[1]["json"]
         assert payload["tssPlanned"] == 75.5
         assert payload["ifPlanned"] == 0.84
+        assert payload["distancePlanned"] == 2000
 
     @pytest.mark.asyncio
     async def test_update_overwrites_stale_if_and_leaves_it_when_omitted(self):

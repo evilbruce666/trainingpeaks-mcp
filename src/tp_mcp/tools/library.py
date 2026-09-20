@@ -355,6 +355,7 @@ async def tp_create_library_item(
     description: str | None = None,
     structure: dict[str, Any] | None = None,
     if_planned: float | None = None,
+    distance_meters: float | None = None,
 ) -> dict[str, Any]:
     """Save a workout template to a library.
 
@@ -370,6 +371,8 @@ async def tp_create_library_item(
         if_planned: Optional planned intensity factor (e.g. 0.84). TP does
             not derive it from ``tss``/``duration_hours``, so pass it when
             you pass ``tss`` or the template shows a stale/empty IF.
+        distance_meters: Optional planned distance in metres (TP stores
+            ``distancePlanned`` in metres; it is not derived from structure).
 
     Returns:
         Dict with confirmation or error.
@@ -416,6 +419,8 @@ async def tp_create_library_item(
             payload["tssPlanned"] = tss
         if if_planned is not None:
             payload["ifPlanned"] = if_planned
+        if distance_meters is not None:
+            payload["distancePlanned"] = distance_meters
         if description:
             payload["description"] = description
         if structure is not None:
@@ -456,6 +461,7 @@ async def tp_update_library_item(
     workout_type_id: int | None = None,
     workout_sub_type_id: int | None = None,
     if_planned: float | None = None,
+    distance_meters: float | None = None,
 ) -> dict[str, Any]:
     """Edit a workout template.
 
@@ -473,6 +479,7 @@ async def tp_update_library_item(
         if_planned: Optional planned intensity factor. Updating ``tss`` alone
             leaves the stored IF untouched (TP does not recompute it), so pass
             both when retargeting a template.
+        distance_meters: Optional planned distance in metres.
 
     Returns:
         Dict with confirmation or error.
@@ -533,6 +540,8 @@ async def tp_update_library_item(
             existing["tssPlanned"] = tss
         if if_planned is not None:
             existing["ifPlanned"] = if_planned
+        if distance_meters is not None:
+            existing["distancePlanned"] = distance_meters
         if description is not None:
             existing["description"] = description
         if structure is not None:

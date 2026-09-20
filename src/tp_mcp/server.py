@@ -1205,6 +1205,7 @@ TOOLS = [
                     "type": "number",
                     "description": "Planned intensity factor (e.g. 0.84); TP does not derive it from tss",
                 },
+                "distance_meters": {"type": "number", "description": "Planned distance in metres"},
             },
             "required": ["library_id", "name", "sport_family_id", "sport_type_id"],
         },
@@ -1237,6 +1238,7 @@ TOOLS = [
                         "(TP keeps the old IF otherwise)"
                     ),
                 },
+                "distance_meters": {"type": "number", "description": "Planned distance in metres"},
             },
             "required": ["library_id", "item_id"],
         },
@@ -2059,7 +2061,7 @@ async def _h_create_lib_item(args):
         sport_family_id=args["sport_family_id"], sport_type_id=args["sport_type_id"],
         duration_hours=args.get("duration_hours"), tss=args.get("tss"),
         description=args.get("description"), structure=args.get("structure"),
-        if_planned=args.get("if_planned"),
+        if_planned=args.get("if_planned"), distance_meters=args.get("distance_meters"),
     )
 
 @_handler("tp_update_library_item")
@@ -2071,7 +2073,7 @@ async def _h_update_lib_item(args):
         structure=args.get("structure"),
         workout_type_id=args.get("workout_type_id"),
         workout_sub_type_id=args.get("workout_sub_type_id"),
-        if_planned=args.get("if_planned"),
+        if_planned=args.get("if_planned"), distance_meters=args.get("distance_meters"),
     )
 
 @_handler("tp_schedule_library_workout")
