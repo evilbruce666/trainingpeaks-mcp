@@ -95,8 +95,10 @@ class WorkoutSummary(BaseModel):
     duration_actual: int | float | None = Field(default=None, alias="totalTime")
     tss_planned: float | None = Field(default=None, alias="tssPlanned")
     tss_actual: float | None = Field(default=None, alias="tssActual")
+    tss_source: int | None = Field(default=None, alias="tssSource")
     distance_planned: float | None = Field(default=None, alias="distancePlanned")
     distance_actual: float | None = Field(default=None, alias="distance")
+    structure: dict[str, Any] | str | None = None
     completed: bool | None = Field(default=None)
     description: str | None = None
     # Extra v6 list fields that used to require a per-workout detail GET to
@@ -105,7 +107,6 @@ class WorkoutSummary(BaseModel):
     # request per athlete instead of one per workout.
     last_modified: str | None = Field(default=None, alias="lastModifiedDate")
     start_time: str | None = Field(default=None, alias="startTime")
-    tss_source: int | None = Field(default=None, alias="tssSource")
     rpe: int | float | None = None
     feeling: int | float | None = None
     comments: list[dict[str, Any]] = Field(default_factory=list, alias="workoutComments")
