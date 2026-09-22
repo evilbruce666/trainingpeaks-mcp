@@ -367,6 +367,106 @@ async def tp_add_athletes_to_group(group_id: str, athlete_ids: list) -> dict[str
         return _membership_result(gid, "added", added, errors)
 
 
+async def tp_move_athletes_between_groups(
+    from_group_id: str, to_group_id: str, athlete_ids: list
+) -> dict[str, Any]:
+    """Move one or more athletes from one athlete group to another.
+
+    TP has no native "move" endpoint — group membership is a many-to-many
+    tag relation, so this is add-to-destination-then-remove-from-source
+    under the hood, same as composing tp_add_athletes_to_group +
+    tp_remove_athletes_from_group. The add happens FIRST for each athlete:
+    if the follow-up remove fails, they end up in BOTH groups rather than
+    in neither — safer than silently dropping them from the roster view.
+
+    Args:
+        from_group_id: The source group (tag) ID.
+        to_group_id: The destination group (tag) ID.
+        athlete_ids: Athlete IDs to move.
+
+    Returns:
+        Dict with ``moved`` (removed from source, added to destination),
+        ``added_only`` (added to destination but the remove from source
+        failed — still a member of both) and ``errors`` (could not even be
+        added to the destination) lists. ``isError`` is set only when
+        NOTHING succeeded in the destination group.
+    """
+    try:
+        fid = int(from_group_id)
+    except (TypeError, ValueError):
+        return {"isError": True, "error_code": "VALIDATION_ERROR",
+                "message": f"from_group_id must be a numeric ID, got {from_group_id!r}."}
+    try:
+        tid = int(to_group_id)
+    except (TypeError, ValueError):
+        return {"isError": True, "error_code": "VALIDATION_ERROR",
+                "message": f"to_group_id must be a numeric ID, got {to_group_id!r}."}
+    if fid == tid:
+        return {"isError": True, "error_code": "VALIDATION_ERROR",
+                "message": "from_group_id and to_group_id must be different groups."}
+    ids, err = _parse_ids(athlete_ids)
+    if err:
+        return {"isError": True, "error_code": "VALIDATION_ERROR", "message": err}
+
+    async with TPClient() as client:
+        coach_id = await _coach_id(client)
+        if not coach_id:
+            return _auth_envelope()
+
+        # One GET covers both tags — cheaper than two _get_tag round-trips.
+        resp = await client.get(_TAGS_ENDPOINT.format(coach_id=coach_id))
+        if resp.is_error:
+            return {"isError": True,
+                    "error_code": resp.error_code.value if resp.error_code else "API_ERROR",
+                    "message": resp.message}
+        data = resp.data if isinstance(resp.data, list) else []
+        by_id = {t.get("id"): t for t in data if isinstance(t, dict)}
+
+        from_tag = by_id.get(fid)
+        if from_tag is None:
+            return {"isError": True, "error_code": "NOT_FOUND",
+                    "message": f"No athlete group with id {fid} (from_group_id). "
+                               "Use tp_list_groups."}
+        to_tag = by_id.get(tid)
+        if to_tag is None:
+            return {"isError": True, "error_code": "NOT_FOUND",
+                    "message": f"No athlete group with id {tid} (to_group_id). "
+                               "Use tp_list_groups."}
+        if from_tag.get("isDefault") or to_tag.get("isDefault"):
+            return {"isError": True, "error_code": "FORBIDDEN",
+                    "message": "Membership of the default group is managed by TP, "
+                               "not editable here."}
+
+        add_endpoint = _TAG_ATHLETES.format(coach_id=coach_id, tag_id=tid)
+        moved: list[int] = []
+        added_only: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        for aid in ids:
+            add_r = await client.post(add_endpoint, json={"Value": aid})
+            if add_r.is_error:
+                errors.append({"athlete_id": aid, "message": add_r.message})
+                continue
+            remove_r = await client.delete(
+                _TAG_ATHLETE.format(coach_id=coach_id, tag_id=fid, athlete_id=aid))
+            if remove_r.is_error:
+                added_only.append({"athlete_id": aid, "message": remove_r.message})
+            else:
+                moved.append(aid)
+
+        result: dict[str, Any] = {
+            "from_group_id": fid, "to_group_id": tid,
+            "moved": moved, "added_only": added_only, "errors": errors,
+        }
+        if errors and not moved and not added_only:
+            result["isError"] = True
+            result["error_code"] = "API_ERROR"
+            result["message"] = (
+                f"None of the {len(errors)} athlete(s) could be added to group {tid}; "
+                "see errors for per-athlete detail."
+            )
+        return result
+
+
 async def tp_remove_athletes_from_group(group_id: str, athlete_ids: list) -> dict[str, Any]:
     """Remove one or more athletes from a group.
 

@@ -34,6 +34,7 @@ from tp_mcp.tools.groups import (
     tp_delete_group,
     tp_list_athletes_in_group,
     tp_list_groups,
+    tp_move_athletes_between_groups,
     tp_remove_athletes_from_group,
     tp_rename_group,
 )
@@ -161,6 +162,7 @@ __all__ = [
     "tp_delete_group",
     "tp_add_athletes_to_group",
     "tp_remove_athletes_from_group",
+    "tp_move_athletes_between_groups",
     "tp_get_workouts",
     "tp_log_metrics",
     "tp_pair_workout",

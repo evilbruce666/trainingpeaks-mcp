@@ -93,6 +93,7 @@ from tp_mcp.tools import (
     tp_list_notes,
     tp_list_training_plans,
     tp_log_metrics,
+    tp_move_athletes_between_groups,
     tp_pair_workout,
     tp_refresh_auth,
     tp_remove_athletes_from_group,
@@ -1484,8 +1485,8 @@ TOOLS = [
     ),
     Tool(
         name="tp_add_athletes_to_group",
-        description="Add one or more athletes to a group. Moving an athlete = add "
-                    "to the new group + remove from the old one.",
+        description="Add one or more athletes to a group. To move athletes between "
+                    "groups, use tp_move_athletes_between_groups instead.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1515,6 +1516,24 @@ TOOLS = [
             "required": ["group_id", "athlete_ids"],
         },
     ),
+    Tool(
+        name="tp_move_athletes_between_groups",
+        description="Move one or more athletes from one athlete group to another "
+                    "in a single call (add to destination, then remove from source).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "from_group_id": {"type": "string", "description": "Source group (tag) ID."},
+                "to_group_id": {"type": "string", "description": "Destination group (tag) ID."},
+                "athlete_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Athlete IDs to move.",
+                },
+            },
+            "required": ["from_group_id", "to_group_id", "athlete_ids"],
+        },
+    ),
 ]
 
 # ---------------------------------------------------------------------------
@@ -1531,6 +1550,7 @@ _ATHLETE_EXEMPT_TOOLS = {
     "tp_list_groups", "tp_list_athletes_in_group",
     "tp_create_group", "tp_rename_group", "tp_delete_group",
     "tp_add_athletes_to_group", "tp_remove_athletes_from_group",
+    "tp_move_athletes_between_groups",
 }
 
 _ATHLETE_PARAM = {
@@ -1570,6 +1590,7 @@ _DESTRUCTIVE_TOOLS = {
     "tp_delete_workout",
     "tp_delete_workout_file",
     "tp_remove_athletes_from_group",
+    "tp_move_athletes_between_groups",  # removes from the source group, same as above
 }
 
 # Writes that append or create: repeating the call duplicates data. Updates,
@@ -1675,6 +1696,13 @@ async def _h_add_athletes_to_group(args):
 async def _h_remove_athletes_from_group(args):
     return await tp_remove_athletes_from_group(
         group_id=args["group_id"], athlete_ids=args["athlete_ids"]
+    )
+
+@_handler("tp_move_athletes_between_groups")
+async def _h_move_athletes_between_groups(args):
+    return await tp_move_athletes_between_groups(
+        from_group_id=args["from_group_id"], to_group_id=args["to_group_id"],
+        athlete_ids=args["athlete_ids"],
     )
 
 @_handler("tp_refresh_auth")

@@ -313,3 +313,125 @@ async def test_remove_athletes_total_failure_sets_iserror():
         mc.return_value.__aenter__.return_value = inst
         out = await tp_remove_athletes_from_group("11", [202])
     assert out["removed"] == [] and out["isError"] is True
+
+
+# ── tp_move_athletes_between_groups ───────────────────────────────────────────
+from tp_mcp.tools.groups import tp_move_athletes_between_groups
+
+TAGS_TWO_NON_DEFAULT = TAGS + [
+    {"id": 13, "coachId": 1135463, "name": "Group B",
+     "athleteIds": [], "isDefault": False},
+]
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_adds_then_removes():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS_TWO_NON_DEFAULT),
+                   post=APIResponse(success=True, data={"value": 0}),
+                   delete=APIResponse(success=True, data={"value": 0}))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_move_athletes_between_groups("11", "13", [202, 203])
+    assert out == {
+        "from_group_id": 11, "to_group_id": 13,
+        "moved": [202, 203], "added_only": [], "errors": [],
+    }
+    # add to destination happens BEFORE remove from source, per athlete
+    inst.post.assert_any_await(
+        "/coaches/v1/coaches/1135463/tags/13/athletes", json={"Value": 202})
+    inst.delete.assert_any_await(
+        "/coaches/v1/coaches/1135463/tags/11/athletes/202")
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_same_group_rejected():
+    out = await tp_move_athletes_between_groups("11", "11", [202])
+    assert out["isError"] and out["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_non_numeric_ids():
+    out = await tp_move_athletes_between_groups("abc", "13", [202])
+    assert out["isError"] and out["error_code"] == "VALIDATION_ERROR"
+    out2 = await tp_move_athletes_between_groups("11", "xyz", [202])
+    assert out2["isError"] and out2["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_unknown_group_not_found():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS_TWO_NON_DEFAULT))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_move_athletes_between_groups("999", "13", [202])
+    assert out["isError"] and out["error_code"] == "NOT_FOUND"
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out2 = await tp_move_athletes_between_groups("11", "999", [202])
+    assert out2["isError"] and out2["error_code"] == "NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_default_group_forbidden_either_side():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS_TWO_NON_DEFAULT))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_move_athletes_between_groups("12", "13", [201])   # 12 = isDefault
+    assert out["isError"] and out["error_code"] == "FORBIDDEN"
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out2 = await tp_move_athletes_between_groups("11", "12", [201])  # 12 = isDefault
+    assert out2["isError"] and out2["error_code"] == "FORBIDDEN"
+    inst.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_validation():
+    out = await tp_move_athletes_between_groups("11", "13", [])
+    assert out["isError"] and out["error_code"] == "VALIDATION_ERROR"
+    out2 = await tp_move_athletes_between_groups("11", "13", ["abc"])
+    assert out2["isError"] and out2["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_add_failure_skips_remove():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS_TWO_NON_DEFAULT),
+                   post=APIResponse(success=False, message="nope"))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_move_athletes_between_groups("11", "13", [202])
+    assert out["moved"] == [] and out["added_only"] == []
+    assert [e["athlete_id"] for e in out["errors"]] == [202]
+    assert out["isError"] is True and out["error_code"] == "API_ERROR"
+    inst.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_remove_failure_leaves_in_both():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS_TWO_NON_DEFAULT),
+                   post=APIResponse(success=True, data={"value": 0}),
+                   delete=APIResponse(success=False, message="nope"))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_move_athletes_between_groups("11", "13", [202])
+    assert out["moved"] == []
+    assert [e["athlete_id"] for e in out["added_only"]] == [202]
+    assert out["errors"] == []
+    # partial success (added but not removed) is not a total failure
+    assert "isError" not in out
+
+
+@pytest.mark.asyncio
+async def test_move_athletes_partial_across_athletes():
+    inst = _client(_get_user_data=USER, get=APIResponse(success=True, data=TAGS_TWO_NON_DEFAULT))
+    inst.post = AsyncMock(side_effect=[
+        APIResponse(success=True, data={"value": 0}),
+        APIResponse(success=False, message="nope"),
+    ])
+    inst.delete = AsyncMock(return_value=APIResponse(success=True, data={"value": 0}))
+    with patch("tp_mcp.tools.groups.TPClient") as mc:
+        mc.return_value.__aenter__.return_value = inst
+        out = await tp_move_athletes_between_groups("11", "13", [202, 203])
+    assert out["moved"] == [202]
+    assert [e["athlete_id"] for e in out["errors"]] == [203]
+    assert out["added_only"] == []
+    assert "isError" not in out
