@@ -438,7 +438,8 @@ async def tp_create_workout(
         date_str: Workout date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).
         sport: Sport type (see SPORT_TYPE_MAP for valid values).
         title: Workout title.
-        duration_minutes: Planned duration in minutes (optional if structure provided).
+        duration_minutes: Planned duration in minutes (optional if distance_km or
+            structure is provided — a race leg is usually distance only).
         description: Optional workout description.
         distance_km: Optional planned distance in kilometres.
         tss_planned: Optional planned Training Stress Score.

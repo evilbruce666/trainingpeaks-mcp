@@ -92,13 +92,17 @@ class CreateWorkoutInput(BaseModel):
     def check_duration_or_structure(self) -> "CreateWorkoutInput":
         if self.structure is not None and self.structured_workout is not None:
             raise ValueError("Provide only one of structure or structured_workout")
+        # A distance alone is a complete planned workout too (a race leg: 10 km,
+        # no target time) — TP stores distancePlanned without totalTimePlanned.
         if (
             self.duration_minutes is None
+            and self.distance_km is None
             and self.structure is None
             and self.structured_workout is None
         ):
             raise ValueError(
-                "Either duration_minutes, structure, or structured_workout must be provided",
+                "Either duration_minutes, distance_km, structure, or "
+                "structured_workout must be provided",
             )
         return self
 

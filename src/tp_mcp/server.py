@@ -270,7 +270,7 @@ TOOLS = [
                 "title": {"type": "string", "description": "Workout title"},
                 "duration_minutes": {
                     "type": "integer",
-                    "description": "Planned duration in minutes (optional if structure provided)",
+                    "description": "Planned duration in minutes (optional with distance_km or structure)",
                 },
                 "description": {"type": "string", "description": "Optional description"},
                 "distance_km": {"type": "number", "description": "Optional distance in km"},

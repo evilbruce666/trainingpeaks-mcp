@@ -136,6 +136,16 @@ class TestCreateWorkoutInput:
         )
         assert result.distance_km == 42.5
 
+    def test_distance_only_is_a_complete_workout(self):
+        # A race leg: 10 km, no target time. Verified live 2026-09-23 — TP
+        # stores distancePlanned with totalTimePlanned left empty.
+        result = CreateWorkoutInput(date="2025-06-01", sport="Run", title="10K", distance_km=10)
+        assert result.distance_km == 10 and result.duration_minutes is None
+
+    def test_nothing_to_plan_is_still_rejected(self):
+        with pytest.raises(ValidationError, match="distance_km"):
+            CreateWorkoutInput(date="2025-06-01", sport="Run", title="empty")
+
     def test_distance_km_negative(self):
         with pytest.raises(ValidationError):
             CreateWorkoutInput(
