@@ -328,6 +328,46 @@ async def tp_create_event(
         }
 
 
+_LEG_ORDER = ("Total", "Swim", "Transition1", "Bike", "Transition2", "Run")
+_RESULT_LEG_KEYS = {
+    "total_s": ("Total", "duration"), "swim_s": ("Swim", "duration"),
+    "t1_s": ("Transition1", "duration"), "bike_s": ("Bike", "duration"),
+    "t2_s": ("Transition2", "duration"), "run_s": ("Run", "duration"),
+    "swim_m": ("Swim", "distance"), "bike_m": ("Bike", "distance"),
+    "run_m": ("Run", "distance"),
+}
+
+
+def _merge_result_legs(legs: list[dict[str, Any]], result: dict[str, float]) -> list[dict[str, Any]]:
+    """Merge multisport result values into the event's legs, keeping TP's order.
+
+    Durations are hours and distances meters in the stored rows; the web UI
+    keeps the same rows (Total/Swim/Transition1/Bike/Transition2/Run)."""
+    by_type = {lg.get("legType"): dict(lg) for lg in legs}
+    for key, value in result.items():
+        leg_type, field = _RESULT_LEG_KEYS[key]
+        row = by_type.setdefault(leg_type, {"legType": leg_type, "duration": None,
+                                            "distance": None, "workoutId": None})
+        row[field] = float(value) / 3600.0 if field == "duration" else float(value)
+    ordered = [by_type[t] for t in _LEG_ORDER if t in by_type]
+    ordered += [lg for t, lg in by_type.items() if t not in _LEG_ORDER]
+    return ordered
+
+
+_DISTANCE_UNIT_M = {"Meters": 1.0, "Kilometers": 1000.0, "Miles": 1609.344}
+
+
+def _event_distance_m(event: dict[str, Any]) -> float | None:
+    """Event distance in METERS — result legs use meters, while the event's own
+    ``distance`` follows ``distanceUnits`` (events made via the API keep km, so
+    copying it raw wrote 42.195 «m» for a marathon, caught live 2026-09-29)."""
+    dist = event.get("distance")
+    factor = _DISTANCE_UNIT_M.get(event.get("distanceUnits") or "")
+    if not isinstance(dist, (int, float)) or isinstance(dist, bool) or factor is None:
+        return None
+    return float(dist) * factor
+
+
 async def tp_update_event(
     event_id: str,
     name: str | None = None,
@@ -338,6 +378,11 @@ async def tp_update_event(
     ctl_target: float | None = None,
     description: str | None = None,
     workout_ids: list[int] | None = None,
+    result_time_seconds: float | None = None,
+    place_overall: int | None = None,
+    place_gender: int | None = None,
+    place_division: int | None = None,
+    result_legs: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Update an event (GET then PUT merge).
 
@@ -354,6 +399,18 @@ async def tp_update_event(
             legs. TrainingPeaks links workouts via the event's ``workouts`` array
             (the ``legs`` structure is derived server-side); pass the ordered
             swim/T1/bike/T2/run workout IDs. Replaces the existing list.
+        result_time_seconds: Official finish time in seconds, stored as the
+            event's ``legs`` Total entry (``duration`` in hours) — the same
+            field the TP web UI fills (verified by writing and reading back,
+            2026-09-29). Single-sport events only.
+        result_legs: Multisport official result as a flat dict of seconds and
+            meters: total_s, swim_s, t1_s, bike_s, t2_s, run_s (durations) and
+            swim_m, bike_m, run_m (distances). Any subset; missing keys leave
+            that leg untouched. Stored as the event's ``legs`` rows (Total,
+            Swim, Transition1, Bike, Transition2, Run) — the shape the TP web
+            UI writes (verified 2026-09-29).
+        place_overall / place_gender / place_division: Finish places, stored in
+            the event's ``results`` rows (Overall / Gender / Division).
 
     Returns:
         Dict with confirmation or error.
@@ -375,6 +432,33 @@ async def tp_update_event(
             "error_code": "VALIDATION_ERROR",
             "message": "priority must be 'A', 'B', or 'C'.",
         }
+
+    for label, val in (
+        ("result_time_seconds", result_time_seconds),
+        ("place_overall", place_overall),
+        ("place_gender", place_gender),
+        ("place_division", place_division),
+    ):
+        if val is not None and (isinstance(val, bool) or not isinstance(val, (int, float)) or val <= 0):
+            return {
+                "isError": True,
+                "error_code": "VALIDATION_ERROR",
+                "message": f"{label} must be a positive number.",
+            }
+
+    if result_legs is not None:
+        bad = [k for k, v in result_legs.items()
+               if k not in _RESULT_LEG_KEYS or isinstance(v, bool)
+               or not isinstance(v, (int, float)) or v <= 0]
+        if bad or not result_legs or result_time_seconds is not None:
+            return {
+                "isError": True,
+                "error_code": "VALIDATION_ERROR",
+                "message": (
+                    "result_legs must be a non-empty dict with positive numbers under "
+                    f"{sorted(_RESULT_LEG_KEYS)} (bad: {bad}); do not combine with result_time_seconds."
+                ),
+            }
 
     async with TPClient() as client:
         athlete_id = await client.ensure_athlete_id()
@@ -430,6 +514,33 @@ async def tp_update_event(
             # verified: PUT /event with workouts=[…], legs stays [] and is derived
             # server-side). Replace the list with the provided ordered leg ids.
             existing["workouts"] = [int(w) for w in workout_ids]
+
+        if result_time_seconds is not None:
+            legs = existing.get("legs") or []
+            if existing.get("workouts") or any(lg.get("legType") != "Total" for lg in legs):
+                return {
+                    "isError": True,
+                    "error_code": "VALIDATION_ERROR",
+                    "message": "result_time_seconds is for single-sport events without attached legs.",
+                }
+            total = legs[0] if legs else {
+                "legType": "Total", "distance": _event_distance_m(existing), "workoutId": None,
+            }
+            total["duration"] = float(result_time_seconds) / 3600.0
+            existing["legs"] = [total]
+        if result_legs is not None:
+            existing["legs"] = _merge_result_legs(existing.get("legs") or [], result_legs)
+        places = {"Overall": place_overall, "Gender": place_gender, "Division": place_division}
+        if any(v is not None for v in places.values()):
+            rows = existing.setdefault("results", [])
+            for rtype, val in places.items():
+                if val is None:
+                    continue
+                row = next((r for r in rows if r.get("resultType") == rtype), None)
+                if row is None:
+                    row = {"resultType": rtype, "entrants": None}
+                    rows.append(row)
+                row["place"] = int(val)
 
         endpoint = f"/fitness/v6/athletes/{athlete_id}/event"
         response = await client.put(endpoint, json=existing)

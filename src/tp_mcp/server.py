@@ -927,8 +927,8 @@ TOOLS = [
         name="tp_update_event",
         description=(
             "Update fields on an existing race/event (name, date, priority, distance, description, attached "
-            "workout legs). Only the provided fields change. Event ID from tp_get_events; events more than ~2 "
-            "years from today cannot be resolved for update."
+            "workout legs, official result time and places). Only the provided fields change. Event ID from "
+            "tp_get_events; events more than ~2 years from today cannot be resolved for update."
         ),
         input_schema={
             "type": "object",
@@ -949,6 +949,21 @@ TOOLS = [
                         "(e.g. swim, T1, bike, T2, run). Replaces the existing list."
                     ),
                 },
+                "result_time_seconds": {
+                    "type": "number",
+                    "description": "Official finish time in seconds (single-sport events without attached legs).",
+                },
+                "result_legs": {
+                    "type": "object",
+                    "description": (
+                        "Multisport official result, seconds and meters: total_s, swim_s, t1_s, "
+                        "bike_s, t2_s, run_s, swim_m, bike_m, run_m (any subset)."
+                    ),
+                    "additionalProperties": {"type": "number"},
+                },
+                "place_overall": {"type": "integer"},
+                "place_gender": {"type": "integer"},
+                "place_division": {"type": "integer"},
             },
             "required": ["event_id"],
         },
@@ -2016,6 +2031,9 @@ async def _h_update_event(args):
         event_type=args.get("event_type"), priority=args.get("priority"),
         distance_km=args.get("distance_km"), ctl_target=args.get("ctl_target"),
         description=args.get("description"), workout_ids=args.get("workout_ids"),
+        result_time_seconds=args.get("result_time_seconds"), result_legs=args.get("result_legs"),
+        place_overall=args.get("place_overall"), place_gender=args.get("place_gender"),
+        place_division=args.get("place_division"),
     )
 
 @_handler("tp_delete_event")

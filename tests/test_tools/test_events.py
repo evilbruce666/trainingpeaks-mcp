@@ -721,3 +721,107 @@ class TestUpdateEventAttachLegs:
             await tp_update_event(event_id="1", description="just a note")
 
         assert mock_instance.put.call_args.kwargs["json"]["workouts"] == [55]
+
+
+class TestUpdateEventResult:
+    """Official result: time in legs[Total].duration (hours), places in results[]
+    (verified live by writing and reading back, 2026-09-29)."""
+
+    def _client(self, existing):
+        mock_instance = AsyncMock()
+        mock_instance.ensure_athlete_id = AsyncMock(return_value=9)
+        mock_instance.get = AsyncMock(return_value=APIResponse(success=True, data=[existing]))
+        mock_instance.put = AsyncMock(return_value=APIResponse(success=True, data={}))
+        return mock_instance
+
+    @pytest.mark.asyncio
+    async def test_time_and_places_written(self):
+        existing = {"id": 1, "personId": 9, "distance": 10000.0, "distanceUnits": "Meters", "legs": [], "workouts": [],
+                    "results": [{"resultType": "Overall", "place": None, "entrants": None}]}
+        with patch("tp_mcp.tools.events.TPClient") as mc:
+            inst = self._client(existing)
+            mc.return_value.__aenter__.return_value = inst
+            r = await tp_update_event(event_id="1", result_time_seconds=2738,
+                                      place_overall=101, place_gender=91)
+        assert r["success"] is True
+        p = inst.put.call_args.kwargs["json"]
+        assert p["legs"] == [{"legType": "Total", "distance": 10000.0, "workoutId": None,
+                              "duration": 2738 / 3600.0}]
+        rows = {x["resultType"]: x["place"] for x in p["results"]}
+        assert rows == {"Overall": 101, "Gender": 91}
+
+    @pytest.mark.asyncio
+    async def test_multisport_event_refuses_time(self):
+        existing = {"id": 1, "personId": 9, "legs": [], "workouts": [5, 6]}
+        with patch("tp_mcp.tools.events.TPClient") as mc:
+            inst = self._client(existing)
+            mc.return_value.__aenter__.return_value = inst
+            r = await tp_update_event(event_id="1", result_time_seconds=3600)
+        assert r["error_code"] == "VALIDATION_ERROR"
+        inst.put.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_positive_values_rejected(self):
+        r = await tp_update_event(event_id="1", place_overall=0)
+        assert r["error_code"] == "VALIDATION_ERROR"
+
+    @pytest.mark.asyncio
+    async def test_leg_distance_is_converted_to_meters(self):
+        existing = {"id": 1, "personId": 9, "distance": 42.195, "distanceUnits": "Kilometers",
+                    "legs": [], "workouts": []}
+        with patch("tp_mcp.tools.events.TPClient") as mc:
+            inst = self._client(existing)
+            mc.return_value.__aenter__.return_value = inst
+            await tp_update_event(event_id="1", result_time_seconds=12111)
+        assert inst.put.call_args.kwargs["json"]["legs"][0]["distance"] == 42195.0
+
+
+class TestUpdateEventMultisportResult:
+    """Triathlon result = legs rows Total/Swim/Transition1/Bike/Transition2/Run,
+    hours + meters (shape the TP web UI writes; verified live 2026-09-29)."""
+
+    def _client(self, existing):
+        mock_instance = AsyncMock()
+        mock_instance.ensure_athlete_id = AsyncMock(return_value=9)
+        mock_instance.get = AsyncMock(return_value=APIResponse(success=True, data=[existing]))
+        mock_instance.put = AsyncMock(return_value=APIResponse(success=True, data={}))
+        return mock_instance
+
+    @pytest.mark.asyncio
+    async def test_full_result_written_in_tp_order_even_with_attached_workouts(self):
+        existing = {"id": 1, "personId": 9, "legs": [], "workouts": [77]}
+        with patch("tp_mcp.tools.events.TPClient") as mc:
+            inst = self._client(existing)
+            mc.return_value.__aenter__.return_value = inst
+            r = await tp_update_event(event_id="1", result_legs={
+                "run_s": 6000, "swim_s": 1800, "total_s": 17010, "t1_s": 120,
+                "bike_s": 9000, "t2_s": 90, "swim_m": 1900, "bike_m": 90000})
+        assert r["success"] is True
+        p = inst.put.call_args.kwargs["json"]
+        assert [lg["legType"] for lg in p["legs"]] == [
+            "Total", "Swim", "Transition1", "Bike", "Transition2", "Run"]
+        by = {lg["legType"]: lg for lg in p["legs"]}
+        assert by["Swim"]["duration"] == 0.5 and by["Swim"]["distance"] == 1900.0
+        assert by["Transition1"]["duration"] == 120 / 3600.0
+        assert p["workouts"] == [77]
+
+    @pytest.mark.asyncio
+    async def test_partial_update_keeps_other_legs(self):
+        existing = {"id": 1, "personId": 9, "workouts": [], "legs": [
+            {"legType": "Total", "duration": 4.0, "distance": None, "workoutId": None},
+            {"legType": "Run", "duration": 1.5, "distance": 21100.0, "workoutId": None}]}
+        with patch("tp_mcp.tools.events.TPClient") as mc:
+            inst = self._client(existing)
+            mc.return_value.__aenter__.return_value = inst
+            await tp_update_event(event_id="1", result_legs={"run_s": 5400})
+        legs = {lg["legType"]: lg for lg in inst.put.call_args.kwargs["json"]["legs"]}
+        assert legs["Run"]["duration"] == 1.5 and legs["Run"]["distance"] == 21100.0
+        assert legs["Total"]["duration"] == 4.0
+
+    @pytest.mark.asyncio
+    async def test_bad_keys_and_double_source_rejected(self):
+        for bad in ({"bogus_s": 5}, {"swim_s": -1}, {}):
+            r = await tp_update_event(event_id="1", result_legs=bad)
+            assert r["error_code"] == "VALIDATION_ERROR"
+        r = await tp_update_event(event_id="1", result_legs={"swim_s": 5}, result_time_seconds=9)
+        assert r["error_code"] == "VALIDATION_ERROR"
