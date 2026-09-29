@@ -751,14 +751,24 @@ class TestUpdateEventResult:
         assert rows == {"Overall": 101, "Gender": 91}
 
     @pytest.mark.asyncio
-    async def test_multisport_event_refuses_time(self):
-        existing = {"id": 1, "personId": 9, "legs": [], "workouts": [5, 6]}
+    async def test_multisport_event_refuses_time_but_single_sport_with_attached_workout_is_ok(self):
+        tri = {"id": 1, "personId": 9, "eventType": "MultisportTriathlon", "legs": [], "workouts": [5, 6]}
+        run = {"id": 1, "personId": 9, "eventType": "RunningRoad", "workouts": [77],
+               "legs": [{"legType": "Total", "duration": 1.0, "distance": 10000.0, "workoutId": None},
+                        {"legType": "Run", "duration": 1.0, "distance": 10000.0, "workoutId": 77}]}
         with patch("tp_mcp.tools.events.TPClient") as mc:
-            inst = self._client(existing)
+            inst = self._client(tri)
             mc.return_value.__aenter__.return_value = inst
             r = await tp_update_event(event_id="1", result_time_seconds=3600)
-        assert r["error_code"] == "VALIDATION_ERROR"
-        inst.put.assert_not_called()
+            assert r["error_code"] == "VALIDATION_ERROR"
+            inst.put.assert_not_called()
+            inst = self._client(run)
+            mc.return_value.__aenter__.return_value = inst
+            r = await tp_update_event(event_id="1", result_time_seconds=2320)
+        assert r["success"] is True
+        legs = inst.put.call_args.kwargs["json"]["legs"]
+        assert legs[0]["duration"] == 2320 / 3600.0
+        assert legs[1] == {"legType": "Run", "duration": 1.0, "distance": 10000.0, "workoutId": 77}
 
     @pytest.mark.asyncio
     async def test_non_positive_values_rejected(self):

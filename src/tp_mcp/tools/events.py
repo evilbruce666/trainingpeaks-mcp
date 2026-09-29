@@ -402,7 +402,7 @@ async def tp_update_event(
         result_time_seconds: Official finish time in seconds, stored as the
             event's ``legs`` Total entry (``duration`` in hours) — the same
             field the TP web UI fills (verified by writing and reading back,
-            2026-09-29). Single-sport events only.
+            2026-09-29). Single-sport events only (attached workouts are fine).
         result_legs: Multisport official result as a flat dict of seconds and
             meters: total_s, swim_s, t1_s, bike_s, t2_s, run_s (durations) and
             swim_m, bike_m, run_m (distances). Any subset; missing keys leave
@@ -517,17 +517,20 @@ async def tp_update_event(
 
         if result_time_seconds is not None:
             legs = existing.get("legs") or []
-            if existing.get("workouts") or any(lg.get("legType") != "Total" for lg in legs):
+            if str(existing.get("eventType") or "").startswith("Multisport"):
                 return {
                     "isError": True,
                     "error_code": "VALIDATION_ERROR",
-                    "message": "result_time_seconds is for single-sport events without attached legs.",
+                    "message": "result_time_seconds is for single-sport events; use result_legs for multisport.",
                 }
-            total = legs[0] if legs else {
-                "legType": "Total", "distance": _event_distance_m(existing), "workoutId": None,
-            }
+            # With an attached workout TP also derives a sport row (e.g. Run with a
+            # workoutId) next to Total; only the Total row carries the official time.
+            total = next((lg for lg in legs if lg.get("legType") == "Total"), None)
+            if total is None:
+                total = {"legType": "Total", "distance": _event_distance_m(existing), "workoutId": None}
+                legs = [total, *legs]
             total["duration"] = float(result_time_seconds) / 3600.0
-            existing["legs"] = [total]
+            existing["legs"] = legs
         if result_legs is not None:
             existing["legs"] = _merge_result_legs(existing.get("legs") or [], result_legs)
         places = {"Overall": place_overall, "Gender": place_gender, "Division": place_division}
