@@ -95,6 +95,7 @@ from tp_mcp.tools import (
     tp_log_metrics,
     tp_move_athletes_between_groups,
     tp_pair_workout,
+    tp_recalc_tss,
     tp_refresh_auth,
     tp_remove_athletes_from_group,
     tp_rename_group,
@@ -380,6 +381,27 @@ TOOLS = [
                 },
             },
             "required": ["workout_ids"],
+        },
+    ),
+    Tool(
+        name="tp_recalc_tss",
+        description=(
+            "Recalculate a completed workout's TSS by heart rate (hrTSS). Use for a run "
+            "whose TSS was scored from running power with a wrong threshold. Per "
+            "workout; TP's own GUI 'recalculate' reverts it. Returns TSS before/after."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "workout_id": {"type": "string", "description": "Completed workout ID."},
+                "source": {
+                    "type": "string",
+                    "enum": ["heartRate"],
+                    "default": "heartRate",
+                    "description": "TSS model to recalculate from (only heartRate).",
+                },
+            },
+            "required": ["workout_id"],
         },
     ),
     Tool(
@@ -1790,6 +1812,11 @@ async def _h_copy_workout(args):
 
 @_handler("tp_reorder_workouts")
 async def _h_reorder(args): return await tp_reorder_workouts(workout_ids=args["workout_ids"])
+
+@_handler("tp_recalc_tss")
+async def _h_recalc_tss(args):
+    return await tp_recalc_tss(
+        workout_id=args["workout_id"], source=args.get("source", "heartRate"))
 
 @_handler("tp_unpair_workout")
 async def _h_unpair(args): return await tp_unpair_workout(workout_id=args["workout_id"])

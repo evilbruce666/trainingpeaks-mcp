@@ -1289,6 +1289,77 @@ async def tp_unpair_workout(workout_id: str) -> dict[str, Any]:
         }
 
 
+#: Write values of the ``recalctss`` command. Only ``heartRate`` is confirmed on the
+#: wire (upstream issue #70: ~900 workouts converted, 0 failures); other models
+#: (power, pace) are not captured yet, so they are not offered.
+_RECALC_TSS_SOURCES = ("heartRate",)
+
+
+async def tp_recalc_tss(workout_id: str, source: str = "heartRate") -> dict[str, Any]:
+    """Recalculate a completed workout's TSS from another model (hrTSS).
+
+    TP command ``POST /fitness/v6/athletes/{id}/commands/workouts/{wid}/recalctss``
+    with ``{"value": "heartRate"}``. Fixes an inflated running TSS scored from
+    running power with a wrong threshold. Per workout only: the athlete's
+    preferred TSS source does not touch existing workouts, and a device that
+    records running power keeps scoring new runs from power. TP's own GUI
+    "recalculate" reverts these per-workout overrides.
+
+    Returns the workout's TSS and ``tss_source`` before and after.
+    """
+    try:
+        validated = WorkoutIdInput(workout_id=workout_id)
+    except (ValidationError, ValueError) as e:
+        msg = format_validation_error(e) if isinstance(e, ValidationError) else str(e)
+        return {"isError": True, "error_code": "VALIDATION_ERROR", "message": msg}
+    if source not in _RECALC_TSS_SOURCES:
+        return {
+            "isError": True,
+            "error_code": "VALIDATION_ERROR",
+            "message": f"source must be one of {list(_RECALC_TSS_SOURCES)}",
+        }
+
+    async with TPClient() as client:
+        athlete_id = await client.ensure_athlete_id()
+        if not athlete_id:
+            return {
+                "isError": True,
+                "error_code": "AUTH_INVALID",
+                "message": "Could not get athlete ID. Re-authenticate.",
+            }
+        wid = validated.workout_id
+        get_endpoint = f"/fitness/v6/athletes/{athlete_id}/workouts/{wid}"
+        before = await client.get(get_endpoint)
+        if before.is_error or not isinstance(before.data, dict):
+            return {
+                "isError": True,
+                "error_code": before.error_code.value if before.error_code else "API_ERROR",
+                "message": before.message or "Could not read the workout.",
+            }
+        response = await client.post(
+            f"/fitness/v6/athletes/{athlete_id}/commands/workouts/{wid}/recalctss",
+            json={"value": source},
+        )
+        if response.is_error:
+            return {
+                "isError": True,
+                "error_code": response.error_code.value if response.error_code else "API_ERROR",
+                "message": response.message,
+            }
+        after = await client.get(get_endpoint)
+        after_data = after.data if not after.is_error and isinstance(after.data, dict) else {}
+
+    return {
+        "success": True,
+        "workout_id": wid,
+        "source": source,
+        "tss_before": before.data.get("tssActual"),
+        "tss_source_before": before.data.get("tssSource"),
+        "tss_after": after_data.get("tssActual"),
+        "tss_source_after": after_data.get("tssSource"),
+    }
+
+
 async def tp_pair_workout(
     completed_workout_id: str,
     planned_workout_id: str,

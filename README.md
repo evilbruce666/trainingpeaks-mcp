@@ -36,6 +36,7 @@ Ask your AI assistant things like:
 | `tp_copy_workout` | Copy a workout to a new date (preserves structure and planned fields) |
 | `tp_reorder_workouts` | Reorder workouts on a given day |
 | `tp_pair_workout` | Pair a completed workout with a planned workout (merges into one) |
+| `tp_recalc_tss` | Recalculate a completed workout's TSS by heart rate (hrTSS) |
 | `tp_unpair_workout` | Unpair a workout (splits into separate completed and planned workouts) |
 | `tp_validate_structure` | Validate interval structure without creating a workout |
 | `tp_get_workout_comments` | Get comments on a workout |

@@ -111,6 +111,7 @@ class TestListTools:
             "tp_download_workout_file",
             "tp_delete_workout_file",
             "tp_pair_workout",
+            "tp_recalc_tss",
             "tp_unpair_workout",
             "tp_set_workout_note",
             "tp_get_workout_note",
