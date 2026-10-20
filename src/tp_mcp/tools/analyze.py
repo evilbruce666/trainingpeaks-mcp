@@ -172,7 +172,7 @@ async def _refetch_full_resolution(
     are already fine-grained, the span is trivial, the workout is too long,
     or any window request fails (never worse than the downsample).
     """
-    times = [r.get("time") for r in rows if r.get("time") is not None]
+    times: list[float] = [r["time"] for r in rows if r.get("time") is not None]
     if len(times) < 2:
         return rows
     span = times[-1] - times[0]
