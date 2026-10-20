@@ -8,8 +8,8 @@ import httpx
 import pytest
 
 from tp_mcp.client.http import APIResponse
-from tp_mcp.client.models import WorkoutAnalysis, parse_workout_analysis
-from tp_mcp.tools.analyze import ANALYSIS_DATA_DIR, tp_analyze_workout
+from tp_mcp.client.models import parse_workout_analysis
+from tp_mcp.tools.analyze import tp_analyze_workout
 
 TEST_ATHLETE_ID = 123456
 TEST_ACCESS_TOKEN = "gAAAA_test_access_token_12345"
@@ -508,3 +508,20 @@ class TestTpAnalyzeWorkout:
 
         assert not result.get("isError")
         assert result["time_series_points"] == 301
+
+
+def test_analysis_dir_is_trimmed_oldest_first(tmp_path, monkeypatch):
+    import os
+
+    from tp_mcp.tools import analyze
+
+    monkeypatch.setattr(analyze, "ANALYSIS_DATA_DIR", tmp_path)
+    monkeypatch.setattr(analyze, "_ANALYSIS_DIR_MAX_BYTES", 250)
+    monkeypatch.setattr(analyze, "_ANALYSIS_DIR_TRIM_TO_BYTES", 220)
+    for i in range(3):
+        f = tmp_path / f"workout_{i}.json"
+        f.write_text("x" * 100)
+        os.utime(f, (1000 + i, 1000 + i))
+    analyze._save_analysis_json(9, {"pad": "y" * 80})
+    left = sorted(p.name for p in tmp_path.iterdir())
+    assert left == ["workout_2.json", "workout_9.json"]
