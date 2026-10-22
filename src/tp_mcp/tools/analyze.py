@@ -174,14 +174,26 @@ async def _post_analysis(
 
 
 def _stitch_windows(windows: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """Merge windowed chart rows, deduping boundary samples by time."""
+    """Merge windowed chart rows, deduping boundary samples by time.
+
+    ``Distance`` is accumulated, but a window that starts while the watch is
+    paused returns it as 0 until the next real sample — stitched as-is, the
+    series drops to 0 and jumps back by the whole distance so far, which reads
+    as a GPS jump downstream. Within the stitched series it never decreases."""
     merged: list[dict[str, Any]] = []
     last_time: float | None = None
+    top: float | None = None
     for rows in windows:
         for row in rows:
             t = row.get("time")
             if last_time is not None and t is not None and t <= last_time:
                 continue
+            d = row.get("Distance")
+            if isinstance(d, (int, float)) and not isinstance(d, bool):
+                if top is not None and d < top:
+                    row = {**row, "Distance": top}
+                else:
+                    top = float(d)
             merged.append(row)
             if t is not None:
                 last_time = t
