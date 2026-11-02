@@ -128,6 +128,7 @@ class TestWorkoutDetail:
             "totalTime": 1.0,
             "totalTimePlanned": 1.0,
             "heartRateAverage": 150,
+            "heartRateMaximum": 178,
             "calories": 570,
             "tssActual": 60.0,
             "tssPlanned": 65.0,
@@ -149,6 +150,7 @@ class TestWorkoutDetail:
         assert workout.normalized_power == 210.0
         assert workout.avg_power == 160
         assert workout.avg_hr == 150
+        assert workout.max_hr == 178
         assert workout.avg_cadence == 85
         assert workout.elevation_gain == 80.0
         assert workout.calories == 570

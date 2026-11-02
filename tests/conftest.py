@@ -131,6 +131,7 @@ def mock_api_responses():
             "powerAverage": 200,
             "normalizedPowerActual": 220,
             "heartRateAverage": 145,
+            "heartRateMaximum": 172,
             "if": 0.85,
             "ifPlanned": 0.90,
             "completed": True,

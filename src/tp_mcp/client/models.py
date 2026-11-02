@@ -181,6 +181,7 @@ class WorkoutDetail(BaseModel):
     avg_power: float | None = Field(default=None, alias="powerAverage")
     normalized_power: float | None = Field(default=None, alias="normalizedPowerActual")
     avg_hr: int | None = Field(default=None, alias="heartRateAverage")
+    max_hr: int | None = Field(default=None, alias="heartRateMaximum")
     avg_cadence: float | None = Field(default=None, alias="cadenceAverage")
     elevation_gain: float | None = Field(default=None, alias="elevationGain")
     completed: bool | None = Field(default=None)

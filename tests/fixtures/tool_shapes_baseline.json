@@ -826,6 +826,7 @@
         "metrics": {
           "avg_cadence": "null",
           "avg_hr": "null",
+          "max_hr": "null",
           "avg_power": "null",
           "calories": "null",
           "distance_actual_km": "null",

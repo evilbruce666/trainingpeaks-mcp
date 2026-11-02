@@ -187,6 +187,8 @@ class TestTpGetWorkout:
         assert result["id"] == "1001"
         assert result["title"] == "Test Workout"
         assert result["metrics"]["avg_power"] == 200
+        assert result["metrics"]["avg_hr"] == 145
+        assert result["metrics"]["max_hr"] == 172
 
     @pytest.mark.asyncio
     async def test_get_workout_includes_structured_workout(self, mock_api_responses):

@@ -384,6 +384,7 @@ async def tp_get_workout(workout_id: str) -> dict[str, Any]:
                     "avg_power": workout.avg_power,
                     "normalized_power": workout.normalized_power,
                     "avg_hr": workout.avg_hr,
+                    "max_hr": workout.max_hr,
                     "avg_cadence": workout.avg_cadence,
                     "elevation_gain": workout.elevation_gain,
                     "calories": workout.calories,
