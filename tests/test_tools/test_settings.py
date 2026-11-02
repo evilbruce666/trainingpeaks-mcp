@@ -435,6 +435,7 @@ class TestCalculatePath:
 # ── tp_create_zones (new per-sport set) ──────────────────────────────────────
 
 import pytest as _pytest  # noqa: E402
+
 from tp_mcp.tools.settings import tp_create_zones  # noqa: E402
 
 _CALC7 = [{"label": str(i + 1), "minimum": i, "maximum": i + 1,

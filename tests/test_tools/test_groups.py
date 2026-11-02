@@ -5,7 +5,16 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from tp_mcp.client.http import APIResponse
-from tp_mcp.tools.groups import tp_list_athletes_in_group, tp_list_groups
+from tp_mcp.tools.groups import (
+    tp_add_athletes_to_group,
+    tp_create_group,
+    tp_delete_group,
+    tp_list_athletes_in_group,
+    tp_list_groups,
+    tp_move_athletes_between_groups,
+    tp_remove_athletes_from_group,
+    tp_rename_group,
+)
 
 USER = {
     "personId": 1135463,
@@ -137,9 +146,6 @@ async def test_list_athletes_in_group_athlete_not_in_roster():
 
 
 # ── write tools (create / rename / delete) — verified signatures ─────────────
-from tp_mcp.tools.groups import (
-    tp_create_group, tp_delete_group, tp_rename_group,
-)
 
 CREATED = {"id": 337680, "coachId": 1135463, "name": "New", "athleteIds": [], "isDefault": False}
 
@@ -222,9 +228,6 @@ async def test_delete_unknown_group_not_found():
 
 
 # ── membership (add / remove athletes) — verified signatures ─────────────────
-from tp_mcp.tools.groups import (
-    tp_add_athletes_to_group, tp_remove_athletes_from_group,
-)
 
 
 @pytest.mark.asyncio
@@ -316,7 +319,6 @@ async def test_remove_athletes_total_failure_sets_iserror():
 
 
 # ── tp_move_athletes_between_groups ───────────────────────────────────────────
-from tp_mcp.tools.groups import tp_move_athletes_between_groups
 
 TAGS_TWO_NON_DEFAULT = TAGS + [
     {"id": 13, "coachId": 1135463, "name": "Group B",
