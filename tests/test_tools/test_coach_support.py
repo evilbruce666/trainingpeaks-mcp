@@ -1,11 +1,12 @@
 """Tests for coach account support: context var, ensure_athlete_id, schema injection."""
 
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from tp_mcp.client.context import athlete_override
-from tp_mcp.client.http import TPClient
+from tp_mcp.client.http import USER_DATA_TTL_S, APIResponse, TPClient
 
 
 # ---------------------------------------------------------------------------
@@ -86,9 +87,11 @@ def _clear_caches():
     """Reset class-level caches between tests."""
     TPClient._cached_athlete_id = None
     TPClient._cached_user_data = None
+    TPClient._cached_user_data_at = 0.0
     yield
     TPClient._cached_athlete_id = None
     TPClient._cached_user_data = None
+    TPClient._cached_user_data_at = 0.0
 
 
 def _mock_client(user_data):
@@ -396,3 +399,83 @@ class TestCallToolAthleteStripping:
         finally:
             if original:
                 _TOOL_HANDLERS["tp_list_athletes"] = original
+
+
+# ---------------------------------------------------------------------------
+# Roster cache freshness (#175): athlete connected after the first lookup
+# ---------------------------------------------------------------------------
+
+NEW_ATHLETE = {"athleteId": 777, "firstName": "Newly", "lastName": "Connected",
+               "email": "new@example.com", "coachedBy": 100}
+
+
+def _roster_with_new_athlete():
+    return {**COACH_USER_DATA, "athletes": [*COACH_USER_DATA["athletes"], NEW_ATHLETE]}
+
+
+def _client_with_api(*responses):
+    """TPClient whose /users/v3/user GETs return `responses` in order."""
+    client = TPClient.__new__(TPClient)
+    client._athlete_id = None
+    client.get = AsyncMock(side_effect=list(responses))
+    return client
+
+
+def _ok(user):
+    return APIResponse(success=True, data={"user": user})
+
+
+def _seed_cache(user, age_s=0.0):
+    TPClient._cached_user_data = user
+    TPClient._cached_user_data_at = time.monotonic() - age_s
+
+
+class TestRosterFreshness:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("target", ["777", "Newly Connected"])
+    async def test_unknown_athlete_refetches_roster_once(self, target):
+        _seed_cache(COACH_USER_DATA)
+        client = _client_with_api(_ok(_roster_with_new_athlete()))
+        token = athlete_override.set(target)
+        try:
+            assert await client.ensure_athlete_id() == 777
+        finally:
+            athlete_override.reset(token)
+        assert client.get.await_count == 1
+        assert TPClient._cached_user_data["athletes"][-1]["athleteId"] == 777
+
+    @pytest.mark.asyncio
+    async def test_known_athlete_uses_cache(self):
+        _seed_cache(COACH_USER_DATA)
+        client = _client_with_api()
+        token = athlete_override.set("201")
+        try:
+            assert await client.ensure_athlete_id() == 201
+        finally:
+            athlete_override.reset(token)
+        client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_still_unknown_after_refetch_is_none(self):
+        _seed_cache(COACH_USER_DATA)
+        client = _client_with_api(_ok(COACH_USER_DATA))
+        token = athlete_override.set("999")
+        try:
+            assert await client.ensure_athlete_id() is None
+        finally:
+            athlete_override.reset(token)
+        assert client.get.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_expired_cache_is_refetched(self):
+        # tp_list_athletes reads the same cache: it must see the new athlete too.
+        _seed_cache(COACH_USER_DATA, age_s=USER_DATA_TTL_S + 1)
+        client = _client_with_api(_ok(_roster_with_new_athlete()))
+        user = await client._get_user_data()
+        assert NEW_ATHLETE in user["athletes"]
+
+    @pytest.mark.asyncio
+    async def test_failed_refetch_keeps_stale_copy(self):
+        _seed_cache(COACH_USER_DATA, age_s=USER_DATA_TTL_S + 1)
+        client = _client_with_api(APIResponse(success=False, message="boom"))
+        assert await client._get_user_data() is COACH_USER_DATA
