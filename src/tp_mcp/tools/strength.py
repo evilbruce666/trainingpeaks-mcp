@@ -4,9 +4,10 @@ Endurance workouts (`tp_create_workout`) use the main TrainingPeaks fitness API
 with power/HR/pace interval structures. Strength workouts are a completely
 different model — `workoutType: "StructuredStrength"` posted to the Peaksware
 strength API (`api.peakswaresb.com`, same Bearer token we already use for
-`tp_analyze_workout`). Exercises come from a fixed library (numeric string IDs);
-the catalogue is baked into `tp_mcp/data/exercises.json` (no search endpoint
-exists server-side), so `tp_search_exercises` runs fully offline.
+`tp_analyze_workout`). Exercises come from the built-in library (numeric string
+IDs), baked into `tp_mcp/data/exercises.json` (no search endpoint exists
+server-side), so `tp_search_exercises` runs offline; the account's own
+exercises (strength_exercises.py) are confirmed on the server by id.
 
 Verified against the live API:
   • create  → POST   /rx/activity/v1/workouts/save        (returns numeric id)
@@ -55,15 +56,21 @@ import logging
 import uuid
 from functools import lru_cache
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
 from tp_mcp.client import TPClient
+from tp_mcp.tools.strength_api import (  # host constants re-exported for existing importers
+    RX_BASE,
+    STRENGTH_API_BASE,
+    STRENGTH_TIMEOUT,
+    BadResponseError,
+    api_error,
+)
+from tp_mcp.tools.strength_api import data as _rx_data
 
 logger = logging.getLogger("tp-mcp")
-
-STRENGTH_API_BASE = "https://api.peakswaresb.com"
-STRENGTH_TIMEOUT = 30.0
 
 # The full parameter catalogue (per exercise sets). Integer-format ones are
 # whole counts; everything else is decimal. Anything outside this set is
@@ -124,8 +131,9 @@ async def tp_search_exercises(
     query: str,
     limit: int = 20,
     muscle_group: str | None = None,
+    include_own: bool = False,
 ) -> dict[str, Any]:
-    """Search the built-in exercise library by name (offline, no API call).
+    """Search the built-in exercise library by name (offline unless `include_own`).
 
     Args:
         query: Substring to match against exercise titles (case-insensitive).
@@ -133,10 +141,14 @@ async def tp_search_exercises(
         limit: Max results (1-100).
         muscle_group: Optional filter on primary/secondary muscle group
             (case-insensitive substring, e.g. "glute", "ham").
+        include_own: Also search the account's own exercises (one live call).
+            If that call fails, built-in results still come back, with
+            `own_exercises_error` set.
 
     Returns:
         Dict with `count` and `exercises` (id, title, video_url, muscle_groups,
-        and the parameter names the exercise natively prescribes).
+        and the parameter names the exercise natively prescribes; own ones carry
+        `own: true`).
     """
     q = (query or "").strip().lower()
     mg = (muscle_group or "").strip().lower()
@@ -163,23 +175,57 @@ async def tp_search_exercises(
                 "parameters": [p["parameter"] for p in ex.get("parameters", [])],
             }
         )
+    own_error = None
+    if include_own:
+        from tp_mcp.tools.strength_exercises import tp_get_own_exercises
+
+        try:
+            own = await tp_get_own_exercises()
+        except Exception as exc:  # built-in results must still come back
+            logger.warning("Own exercise lookup failed: %s", exc)
+            own = {"isError": True, "message": "Could not load your own exercises."}
+        if own.get("isError"):
+            own_error = own.get("message")
+        for ex in own.get("exercises") or []:
+            title = ex.get("title") or ""
+            if q and q not in title.lower():
+                continue
+            if mg and mg not in " ".join(ex.get("muscle_groups") or []).lower():
+                continue
+            out.append({"id": ex["id"], "title": title, "video_url": None,
+                        "muscle_groups": ex.get("muscle_groups") or [], "parameters": [],
+                        "own": True})
     # Rank exact / prefix matches first for a name query — BEFORE truncating, so
     # an exact match that sits past `limit` in catalogue order isn't dropped.
+    # Own exercises go first: there are few of them, and behind ~944 built-in
+    # matches of a common word they would never survive the `limit` cut.
     if q:
-        out.sort(key=lambda e: (e["title"].lower() != q, not e["title"].lower().startswith(q)))
+        out.sort(key=lambda e: (not e.get("own"), e["title"].lower() != q,
+                                not e["title"].lower().startswith(q)))
+    else:
+        out.sort(key=lambda e: not e.get("own"))
     out = out[:limit]
-    return {"count": len(out), "exercises": out}
+    result: dict[str, Any] = {"count": len(out), "exercises": out}
+    if own_error:
+        result["own_exercises_error"] = own_error
+    return result
 
 
 # ── Payload construction ────────────────────────────────────────────────────
 
 
 def _validate_blocks(blocks: list[dict[str, Any]]) -> str | None:
-    """Return an error string if the blocks are invalid, else None."""
+    """Return an error string if the blocks are structurally invalid, else None.
+
+    Exercise ids are only checked for presence here: an id outside the built-in
+    catalogue may be one of the account's own exercises, which only the server
+    can confirm — see `_resolve_exercises`."""
     if not blocks:
         return "At least one block with one exercise is required."
     catalogue = _catalogue()
     for bi, block in enumerate(blocks):
+        if not isinstance(block, dict):
+            return f"block[{bi}] must be an object."
         btype = block.get("type", "SingleExercise")
         if btype not in _BLOCK_TYPES:
             return f"block[{bi}].type {btype!r} is invalid. Allowed: {sorted(_BLOCK_TYPES)}."
@@ -188,12 +234,15 @@ def _validate_blocks(blocks: list[dict[str, Any]]) -> str | None:
             return f"block[{bi}] ({btype}) has no exercises."
         set_counts = []
         for ei, ex in enumerate(exercises):
-            eid = str(ex.get("id", "")).strip()
-            if eid not in catalogue:
-                return f"block[{bi}].exercise[{ei}] id {eid!r} not in the exercise library."
+            if not isinstance(ex, dict):
+                return f"block[{bi}].exercise[{ei}] must be an object."
+            eid = str(ex.get("id") or "").strip()
+            if not eid:
+                return f"block[{bi}].exercise[{ei}] has no id."
+            label = catalogue.get(eid, {}).get("title", f"#{eid}")
             sets = ex.get("sets") or []
             if not sets:
-                return f"block[{bi}].exercise[{ei}] ({catalogue[eid]['title']}) has no sets."
+                return f"block[{bi}].exercise[{ei}] ({label}) has no sets."
             set_counts.append(len(sets))
             for si, s in enumerate(sets):
                 if not isinstance(s, dict) or not s:
@@ -212,12 +261,41 @@ def _validate_blocks(blocks: list[dict[str, Any]]) -> str | None:
     return None
 
 
+async def _resolve_exercises(
+    h: httpx.AsyncClient, headers: dict[str, str], blocks: list[dict[str, Any]]
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
+    """Exercise metadata for every id in `blocks`: the built-in catalogue plus
+    the account's own exercises, which are confirmed one by one on the server.
+
+    Returns (id → {"title"}, error envelope or None)."""
+    catalogue = _catalogue()
+    ids = {str(ex.get("id") or "").strip() for b in blocks for ex in b.get("exercises") or []}
+    known: dict[str, dict[str, Any]] = dict(catalogue)
+    for eid in sorted(ids - catalogue.keys()):
+        unknown = _err("VALIDATION_ERROR",
+                       f"Exercise id {eid!r} is neither in the built-in library nor "
+                       f"among your own exercises.")
+        r = await h.get(f"{RX_BASE}/exercises/{quote(eid, safe='')}", headers=headers)
+        if r.status_code == 404:
+            return {}, unknown
+        if r.status_code != 200:
+            return {}, api_error(r, unknown["message"])
+        try:
+            data = _rx_data(r)
+        except BadResponseError as exc:
+            return {}, _err("API_ERROR", f"Strength API returned an unexpected response ({exc}).")
+        if str(data.get("id") or "").strip() != eid:
+            return {}, unknown
+        known[eid] = {"id": eid, "title": data.get("title") or eid}
+    return known, None
+
+
 def _u() -> str:
     return str(uuid.uuid4())
 
 
 def _build_prescription(ex: dict[str, Any], catalogue: dict[str, Any]) -> dict[str, Any]:
-    eid = str(ex["id"])
+    eid = str(ex["id"]).strip()
     meta = catalogue[eid]
     sets_in = ex.get("sets") or []
     # Prescribed columns = union of parameters used across this exercise's sets,
@@ -253,28 +331,34 @@ def _build_prescription(ex: dict[str, Any], catalogue: dict[str, Any]) -> dict[s
     }
 
 
+def _build_blocks(
+    blocks: list[dict[str, Any]], exercises: dict[str, dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """Inflate input blocks into the wire format. `exercises` maps every id used
+    to its metadata (default: the built-in catalogue)."""
+    known = exercises if exercises is not None else _catalogue()
+    return [
+        {
+            "id": _u(),
+            "blockType": b.get("type", "SingleExercise"),
+            "title": b.get("title"),
+            "coachNotes": b.get("notes"),
+            "prescriptions": [_build_prescription(ex, known) for ex in b["exercises"]],
+        }
+        for b in blocks
+    ]
+
+
 def _build_payload(
     athlete_id: int,
     date: str,
     title: str,
     blocks: list[dict[str, Any]],
     instructions: str | None,
+    exercises: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    catalogue = _catalogue()
-    blocks_out = []
-    total_sets = 0
-    for block in blocks:
-        prescs = [_build_prescription(ex, catalogue) for ex in block["exercises"]]
-        total_sets += sum(len(p["sets"]) for p in prescs)
-        blocks_out.append(
-            {
-                "id": _u(),
-                "blockType": block.get("type", "SingleExercise"),
-                "title": block.get("title"),
-                "coachNotes": block.get("notes"),
-                "prescriptions": prescs,
-            }
-        )
+    blocks_out = _build_blocks(blocks, exercises)
+    total_sets = sum(len(p["sets"]) for b in blocks_out for p in b["prescriptions"])
     return {
         "id": _u(),
         "workoutType": "StructuredStrength",
@@ -373,9 +457,13 @@ async def tp_create_strength_workout(
         athlete_id, access, err = await _access(client)
         if err:
             return err
-        payload = _build_payload(athlete_id, date.strip(), title.strip(), blocks, instructions)
         try:
             async with httpx.AsyncClient(timeout=STRENGTH_TIMEOUT) as h:
+                known, err = await _resolve_exercises(h, _headers(access), blocks)
+                if err:
+                    return err
+                payload = _build_payload(athlete_id, date.strip(), title.strip(), blocks,
+                                         instructions, known)
                 r = await h.post(
                     f"{STRENGTH_API_BASE}/rx/activity/v1/workouts/save",
                     headers=_headers(access),
@@ -536,19 +624,10 @@ async def tp_update_strength_workout(
                 changed: list[str] = []
 
                 if blocks is not None:
-                    catalogue = _catalogue()
-                    new_blocks = [
-                        {
-                            "id": _u(),
-                            "blockType": b.get("type", "SingleExercise"),
-                            "title": b.get("title"),
-                            "coachNotes": b.get("notes"),
-                            "prescriptions": [
-                                _build_prescription(ex, catalogue) for ex in b["exercises"]
-                            ],
-                        }
-                        for b in blocks
-                    ]
+                    known, err = await _resolve_exercises(h, _headers(access), blocks)
+                    if err:
+                        return err
+                    new_blocks = _build_blocks(blocks, known)
                     if mode == "append":
                         doc["blocks"] = (doc.get("blocks") or []) + new_blocks
                     else:
@@ -874,3 +953,4 @@ async def tp_delete_strength_workout(workout_id: str) -> dict[str, Any]:
         if r.status_code not in (200, 204):
             return _map_status(r.status_code, r.text)
         return {"deleted": True, "workout_id": wid}
+

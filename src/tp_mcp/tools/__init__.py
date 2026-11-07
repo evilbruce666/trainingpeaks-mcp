@@ -77,6 +77,23 @@ from tp_mcp.tools.strength import (
     tp_search_exercises,
     tp_update_strength_workout,
 )
+from tp_mcp.tools.strength_exercises import (
+    tp_create_exercise,
+    tp_delete_exercise,
+    tp_get_exercise,
+    tp_get_own_exercises,
+    tp_update_exercise,
+)
+from tp_mcp.tools.strength_library import (
+    tp_copy_strength_library_item,
+    tp_create_strength_library_item,
+    tp_delete_strength_library_item,
+    tp_get_strength_library_item,
+    tp_get_strength_library_items,
+    tp_save_strength_workout_to_library,
+    tp_schedule_strength_library_item,
+    tp_update_strength_library_item,
+)
 from tp_mcp.tools.structure import tp_validate_structure
 from tp_mcp.tools.weekly_summary import tp_get_weekly_summary
 from tp_mcp.tools.workout_files import (
@@ -192,4 +209,17 @@ __all__ = [
     "tp_get_strength_workouts",
     "tp_delete_strength_workout",
     "tp_update_strength_workout",
+    "tp_create_strength_library_item",
+    "tp_get_strength_library_item",
+    "tp_get_strength_library_items",
+    "tp_schedule_strength_library_item",
+    "tp_delete_strength_library_item",
+    "tp_update_strength_library_item",
+    "tp_copy_strength_library_item",
+    "tp_save_strength_workout_to_library",
+    "tp_get_exercise",
+    "tp_get_own_exercises",
+    "tp_create_exercise",
+    "tp_update_exercise",
+    "tp_delete_exercise",
 ]

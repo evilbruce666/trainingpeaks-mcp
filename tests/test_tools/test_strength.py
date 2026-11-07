@@ -111,9 +111,14 @@ class TestValidation:
         err = _validate_blocks([{"type": "Nope", "exercises": [{"id": "1", "sets": [{"Reps": "8"}]}]}])
         assert err and "type" in err
 
-    def test_unknown_exercise(self):
-        err = _validate_blocks([{"type": "SingleExercise", "exercises": [{"id": "999999", "sets": [{"Reps": "8"}]}]}])
-        assert err and "not in the exercise library" in err
+    def test_id_outside_catalogue_is_left_to_the_server(self):
+        # Could be the coach's own exercise — only the server can tell.
+        assert _validate_blocks([{"type": "SingleExercise",
+                                  "exercises": [{"id": "999999", "sets": [{"Reps": "8"}]}]}]) is None
+
+    def test_missing_exercise_id(self):
+        err = _validate_blocks([{"type": "SingleExercise", "exercises": [{"sets": [{"Reps": "8"}]}]}])
+        assert err and "no id" in err
 
     def test_unknown_parameter(self):
         err = _validate_blocks([{"type": "SingleExercise", "exercises": [{"id": "1", "sets": [{"Repz": "8"}]}]}])
@@ -200,10 +205,44 @@ class TestCreate:
 
     @pytest.mark.asyncio
     async def test_validation_blocks_before_network(self):
-        # Unknown exercise → VALIDATION_ERROR, no client touched.
-        blocks = [{"type": "SingleExercise", "exercises": [{"id": "0", "sets": [{"Reps": "8"}]}]}]
+        # Structural error (no sets) → VALIDATION_ERROR, no client touched.
+        blocks = [{"type": "SingleExercise", "exercises": [{"id": "1", "sets": []}]}]
         r = await tp_create_strength_workout(date="2027-01-06", title="x", blocks=blocks)
         assert r["error_code"] == "VALIDATION_ERROR"
+
+    @pytest.mark.asyncio
+    async def test_unknown_exercise_id_is_checked_against_own_exercises(self):
+        # An id outside the built-in catalogue may be the coach's own exercise;
+        # the server says no (404) → VALIDATION_ERROR and nothing is saved.
+        blocks = [{"type": "SingleExercise", "exercises": [{"id": "0", "sets": [{"Reps": "8"}]}]}]
+        http = _mock_http(404, {"message": "Could not find exercise"})
+        with patch("tp_mcp.tools.strength.TPClient") as mtp:
+            mtp.return_value.__aenter__.return_value = _mock_tp_client()
+            with patch("tp_mcp.tools.strength.httpx.AsyncClient") as mh:
+                mh.return_value.__aenter__.return_value = http
+                r = await tp_create_strength_workout(date="2027-01-06", title="x", blocks=blocks)
+        assert r["error_code"] == "VALIDATION_ERROR" and "own exercises" in r["message"]
+        http.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_own_exercise_goes_into_the_workout_with_its_title(self):
+        blocks = [{"type": "SingleExercise", "exercises": [{"id": "686317", "sets": [{"Reps": "8"}]}]}]
+        http = AsyncMock()
+        own = MagicMock(status_code=200)
+        own.json.return_value = {"data": {"id": "686317", "title": "Жим мешка", "canEdit": True}}
+        http.get.return_value = own
+        saved = MagicMock(status_code=200)
+        saved.json.return_value = {"data": {"id": "9", "snapshot": {"totalBlocks": 1, "totalSets": 1}}}
+        http.post.return_value = saved
+        with patch("tp_mcp.tools.strength.TPClient") as mtp:
+            mtp.return_value.__aenter__.return_value = _mock_tp_client()
+            with patch("tp_mcp.tools.strength.httpx.AsyncClient") as mh:
+                mh.return_value.__aenter__.return_value = http
+                r = await tp_create_strength_workout(date="2027-01-06", title="x", blocks=blocks)
+        assert r["workout_id"] == "9"
+        assert http.get.call_args.args[0].endswith("/exercises/686317")
+        presc = http.post.call_args.kwargs["json"]["blocks"][0]["prescriptions"][0]
+        assert presc["exercise"] == {"id": "686317", "title": "Жим мешка", "parameters": []}
 
     @pytest.mark.asyncio
     async def test_api_error_surfaces_server_validation(self):
@@ -598,7 +637,7 @@ class TestUpdateStrength:
 
     @pytest.mark.asyncio
     async def test_invalid_blocks_rejected_before_network(self):
-        bad = [{"type": "SingleExercise", "exercises": [{"id": "0", "sets": [{"Reps": "8"}]}]}]
+        bad = [{"type": "SingleExercise", "exercises": [{"id": "1", "sets": [{"Repz": "8"}]}]}]
         r = await tp_update_strength_workout(workout_id="1", blocks=bad)
         assert r["error_code"] == "VALIDATION_ERROR"
 
@@ -621,3 +660,4 @@ class TestUpdateStrength:
         r = await self._run(http, workout_id="24373159", blocks=_BLOCKS)
         assert r["error_code"] == "API_ERROR"
         assert "bad" in r["message"]
+

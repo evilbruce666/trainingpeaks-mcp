@@ -23,7 +23,7 @@ Ask your AI assistant things like:
 - "Set my FTP to 310 and update my power zones"
 - "Add a calendar note for next Monday: rest day, travel"
 
-## Tools (84)
+## Tools (101)
 
 ### Workouts
 | Tool | Description |
@@ -133,13 +133,40 @@ honoured exactly. They update a **threshold** (FTP / LTHR / threshold pace).
 ### Strength Workouts
 | Tool | Description |
 |------|-------------|
-| `tp_search_exercises` | Search the built-in strength exercise library by name (offline) |
+| `tp_search_exercises` | Search the built-in strength exercise library by name (offline; `include_own` also searches your own exercises, listed first) |
 | `tp_create_strength_workout` | Create a structured strength/gym workout (blocks of exercises with sets and parameters) |
 | `tp_get_strength_summary` | Get a strength workout's compliance summary (blocks/prescriptions/sets completed) |
 | `tp_get_strength_workouts` | List strength/gym workouts in a date range (they don't appear in `tp_get_workouts`) |
 | `tp_get_strength_workout` | Get a strength workout's full detail: blocks, exercises, sets, prescribed vs executed weights |
 | `tp_update_strength_workout` | Update a strength workout in place (replace/append blocks, retitle, mark complete) - preserves Garmin TSS and FIT files, so use this rather than delete-and-recreate on device-synced workouts |
 | `tp_delete_strength_workout` | Delete a strength workout by ID |
+
+### Strength Templates in Library Folders
+
+Strength Builder templates live in the same folders as endurance templates (`tp_get_libraries` / `tp_create_library`) but on the strength API, so `tp_get_library_items` does not list them.
+
+| Tool | Description |
+|------|-------------|
+| `tp_get_strength_library_items` | List the strength templates in a folder (id, title, set counts, exercises) |
+| `tp_get_strength_library_item` | Get a strength template in full: blocks, exercises, prescribed sets |
+| `tp_create_strength_library_item` | Save a new strength template into a folder (same blocks as `tp_create_strength_workout`) |
+| `tp_update_strength_library_item` | Edit a template in place: replace/append blocks, retitle, change the description |
+| `tp_copy_strength_library_item` | Copy a template into a folder (the same or another one) |
+| `tp_save_strength_workout_to_library` | Save a calendar strength workout into a folder as a template |
+| `tp_schedule_strength_library_item` | Put a template on the athlete's calendar on a date |
+| `tp_delete_strength_library_item` | Permanently delete a template |
+
+### Own Strength Exercises
+
+Built-in exercises are read-only. Your own exercises work in workouts and templates by id like built-in ones; `tp_search_exercises` finds them with `include_own: true`.
+
+| Tool | Description |
+|------|-------------|
+| `tp_get_exercise` | Get one exercise (built-in or own) live: video, instructions, parameters, muscle groups |
+| `tp_get_own_exercises` | List your own exercises |
+| `tp_create_exercise` | Create your own exercise (title, default parameters, optional video, instructions, muscle groups) |
+| `tp_update_exercise` | Edit your own exercise in place |
+| `tp_delete_exercise` | Permanently delete your own exercise |
 
 ### Athlete Groups (coach accounts)
 | Tool | Description |

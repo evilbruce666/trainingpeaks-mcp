@@ -34,24 +34,29 @@ from tp_mcp.tools import (
     tp_analyze_workout,
     tp_apply_training_plan,
     tp_auth_status,
+    tp_copy_strength_library_item,
     tp_copy_workout,
     tp_create_availability,
     tp_create_equipment,
     tp_create_event,
+    tp_create_exercise,
     tp_create_group,
     tp_create_library,
     tp_create_library_item,
     tp_create_note,
+    tp_create_strength_library_item,
     tp_create_strength_workout,
     tp_create_workout,
     tp_create_zones,
     tp_delete_availability,
     tp_delete_equipment,
     tp_delete_event,
+    tp_delete_exercise,
     tp_delete_group,
     tp_delete_library,
     tp_delete_library_item,
     tp_delete_note,
+    tp_delete_strength_library_item,
     tp_delete_strength_workout,
     tp_delete_workout,
     tp_delete_workout_file,
@@ -61,6 +66,7 @@ from tp_mcp.tools import (
     tp_get_availability,
     tp_get_equipment,
     tp_get_events,
+    tp_get_exercise,
     tp_get_fitness,
     tp_get_focus_event,
     tp_get_libraries,
@@ -71,9 +77,12 @@ from tp_mcp.tools import (
     tp_get_note,
     tp_get_note_comments,
     tp_get_nutrition,
+    tp_get_own_exercises,
     tp_get_peaks,
     tp_get_pool_length_settings,
     tp_get_profile,
+    tp_get_strength_library_item,
+    tp_get_strength_library_items,
     tp_get_strength_summary,
     tp_get_strength_workout,
     tp_get_strength_workouts,
@@ -100,18 +109,22 @@ from tp_mcp.tools import (
     tp_remove_athletes_from_group,
     tp_rename_group,
     tp_reorder_workouts,
+    tp_save_strength_workout_to_library,
     tp_schedule_library_workout,
+    tp_schedule_strength_library_item,
     tp_search_exercises,
     tp_set_workout_note,
     tp_unpair_workout,
     tp_update_equipment,
     tp_update_event,
+    tp_update_exercise,
     tp_update_ftp,
     tp_update_hr_zones,
     tp_update_library_item,
     tp_update_note,
     tp_update_nutrition,
     tp_update_speed_zones,
+    tp_update_strength_library_item,
     tp_update_strength_workout,
     tp_update_workout,
     tp_upload_workout_file,
@@ -1342,7 +1355,8 @@ TOOLS = [
     Tool(
         name="tp_search_exercises",
         description=(
-            "Search the built-in strength exercise library by name (offline). "
+            "Search the built-in strength exercise library by name (offline; with "
+            "include_own also your own exercises, listed first). "
             "Returns library exercise IDs to use in tp_create_strength_workout, "
             "plus each exercise's native parameters and a demo video URL."
         ),
@@ -1355,6 +1369,10 @@ TOOLS = [
                     "type": "string",
                     "description": "Optional muscle-group filter, e.g. 'glute', 'hamstring', 'chest'.",
                 },
+                "include_own": {
+                    "type": "boolean",
+                    "description": "Also search your own exercises (one live call). Default false.",
+                },
             },
             "required": ["query"],
         },
@@ -1363,8 +1381,8 @@ TOOLS = [
         name="tp_create_strength_workout",
         description=(
             "Create a structured strength/gym workout on the athlete's calendar. "
-            "Blocks of exercises (from tp_search_exercises) with sets and "
-            "parameters (Reps, WeightKg, Duration, …)."
+            "Blocks of exercises (built-in ids from tp_search_exercises, or your own "
+            "exercise ids) with sets and parameters (Reps, WeightKg, Duration, …)."
         ),
         input_schema={
             "type": "object",
@@ -1482,6 +1500,194 @@ TOOLS = [
             "type": "object",
             "properties": {"workout_id": {"type": "string", "description": "Strength workout ID."}},
             "required": ["workout_id"],
+        },
+    ),
+    Tool(
+        name="tp_create_strength_library_item",
+        description=(
+            "Save a structured strength (Strength Builder) TEMPLATE into a workout-library "
+            "folder — the strength counterpart of tp_create_library_item, which only holds "
+            "endurance templates. Same blocks as tp_create_strength_workout. Put it on a "
+            "calendar later with tp_schedule_strength_library_item."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "library_id": {"type": "string", "description": "Folder id from tp_get_libraries."},
+                "title": {"type": "string", "description": "Template title."},
+                "instructions": {"type": "string", "description": "Optional session instructions."},
+                "blocks": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Blocks in the same shape as tp_create_strength_workout.",
+                },
+            },
+            "required": ["library_id", "title", "blocks"],
+        },
+    ),
+    Tool(
+        name="tp_get_strength_library_item",
+        description=(
+            "Get a strength template from a workout-library folder in full: blocks, "
+            "exercises and prescribed sets."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {"item_id": {"type": "string", "description": "Strength template id."}},
+            "required": ["item_id"],
+        },
+    ),
+    Tool(
+        name="tp_get_strength_library_items",
+        description=(
+            "List the strength (Strength Builder) templates in a workout-library folder. "
+            "tp_get_library_items does not show them. Returns item_id, title, set counts "
+            "and the exercises of each."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {"library_id": {"type": "string", "description": "Folder id from tp_get_libraries."}},
+            "required": ["library_id"],
+        },
+    ),
+    Tool(
+        name="tp_schedule_strength_library_item",
+        description=(
+            "Put a strength template from a workout-library folder on the athlete's "
+            "calendar on a date. Creates a structured strength workout with the "
+            "template's blocks; returns its workout_id."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "string", "description": "Strength template id."},
+                "date": {"type": "string", "description": "Planned date YYYY-MM-DD."},
+            },
+            "required": ["item_id", "date"],
+        },
+    ),
+    Tool(
+        name="tp_update_strength_library_item",
+        description=(
+            "Edit a strength template in its folder in place: replace or append blocks, "
+            "retitle, or change the description. Same id; nothing else changes."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "string", "description": "Strength template id."},
+                "blocks": {"type": "array", "items": {"type": "object"},
+                           "description": "Blocks in the same shape as tp_create_strength_workout."},
+                "title": {"type": "string", "description": "Optional new title."},
+                "instructions": {"type": "string", "description": "Optional new description; empty string clears it."},
+                "mode": {"type": "string", "enum": ["replace", "append"],
+                         "description": "replace (default) swaps the blocks; append adds after them."},
+            },
+            "required": ["item_id"],
+        },
+    ),
+    Tool(
+        name="tp_copy_strength_library_item",
+        description="Copy a strength template into a folder (the same or another one), optionally under a new title.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "string", "description": "Strength template id to copy."},
+                "library_id": {"type": "string", "description": "Target folder id."},
+                "title": {"type": "string", "description": "Optional title for the copy."},
+            },
+            "required": ["item_id", "library_id"],
+        },
+    ),
+    Tool(
+        name="tp_save_strength_workout_to_library",
+        description="Save a calendar strength workout into a workout-library folder as a reusable template.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "workout_id": {"type": "string", "description": "Calendar strength workout id."},
+                "library_id": {"type": "string", "description": "Target folder id."},
+                "title": {"type": "string", "description": "Optional template title (default: the workout's)."},
+            },
+            "required": ["workout_id", "library_id"],
+        },
+    ),
+    Tool(
+        name="tp_get_exercise",
+        description=(
+            "Get one strength exercise (built-in or your own) live: title, video, "
+            "instructions, default parameters, muscle groups, and own=true if editable."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {"exercise_id": {"type": "string", "description": "Exercise id."}},
+            "required": ["exercise_id"],
+        },
+    ),
+    Tool(
+        name="tp_get_own_exercises",
+        description="List your own (custom) strength exercises.",
+        input_schema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="tp_create_exercise",
+        description=(
+            "Create your own strength exercise, usable in strength workouts and "
+            "templates by its id like a built-in one. Built-in exercises cannot be "
+            "renamed; create your own only for movements the library lacks."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Exercise name."},
+                "parameters": {"type": "array", "items": {"type": "string"},
+                               "description": "Default columns, e.g. ['Reps', 'WeightKg'] or ['DistanceMeters']."},
+                "video_url": {"type": "string", "description": "Optional demo video link."},
+                "instructions": {"type": "string", "description": "Optional technique description."},
+                "primary_muscle_groups": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": ("Abs, Biceps, Calves, Chest, Forearms, Glute, Hamstrings, "
+                                    "LowerBack, Quads, Shoulders, Triceps, UpperBack."),
+                },
+                "secondary_muscle_groups": {"type": "array", "items": {"type": "string"},
+                                            "description": "Same values as primary_muscle_groups."},
+            },
+            "required": ["title", "parameters"],
+        },
+    ),
+    Tool(
+        name="tp_update_exercise",
+        description="Edit your own strength exercise in place; omitted fields stay. Built-in exercises are refused.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "exercise_id": {"type": "string", "description": "Your exercise id."},
+                "title": {"type": "string"},
+                "parameters": {"type": "array", "items": {"type": "string"}},
+                "video_url": {"type": "string"},
+                "instructions": {"type": "string"},
+                "primary_muscle_groups": {"type": "array", "items": {"type": "string"}},
+                "secondary_muscle_groups": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["exercise_id"],
+        },
+    ),
+    Tool(
+        name="tp_delete_exercise",
+        description="Permanently delete your own strength exercise (irreversible). Built-in exercises are refused.",
+        input_schema={
+            "type": "object",
+            "properties": {"exercise_id": {"type": "string", "description": "Your exercise id."}},
+            "required": ["exercise_id"],
+        },
+    ),
+    Tool(
+        name="tp_delete_strength_library_item",
+        description="Permanently delete a strength template from its workout-library folder (irreversible).",
+        input_schema={
+            "type": "object",
+            "properties": {"item_id": {"type": "string", "description": "Strength template id."}},
+            "required": ["item_id"],
         },
     ),
     Tool(
@@ -1604,8 +1810,9 @@ _ATHLETE_EXEMPT_TOOLS = {
     "tp_list_athletes", "tp_get_workout_types",
     # Coach-scoped — enumerates methods under the caller's own user, not an athlete.
     "tp_get_zone_methods",
-    # Offline exercise-library search — not athlete-scoped.
-    "tp_search_exercises",
+    # Exercise library (built-in + the account's own exercises) — not athlete-scoped.
+    "tp_search_exercises", "tp_get_exercise", "tp_get_own_exercises",
+    "tp_create_exercise", "tp_update_exercise", "tp_delete_exercise",
     # Coach-scoped (groups belong to the coach, not a targeted athlete).
     "tp_list_groups", "tp_list_athletes_in_group",
     "tp_create_group", "tp_rename_group", "tp_delete_group",
@@ -1642,10 +1849,12 @@ _DESTRUCTIVE_TOOLS = {
     "tp_delete_availability",
     "tp_delete_equipment",
     "tp_delete_event",
+    "tp_delete_exercise",
     "tp_delete_group",
     "tp_delete_library",
     "tp_delete_library_item",
     "tp_delete_note",
+    "tp_delete_strength_library_item",
     "tp_delete_strength_workout",
     "tp_delete_workout",
     "tp_delete_workout_file",
@@ -1660,19 +1869,24 @@ _NON_IDEMPOTENT_WRITES = {
     "tp_add_note_comment",
     "tp_add_workout_comment",
     "tp_apply_training_plan",
+    "tp_copy_strength_library_item",
     "tp_copy_workout",
     "tp_create_availability",
     "tp_create_equipment",
     "tp_create_event",
+    "tp_create_exercise",
     "tp_create_group",
     "tp_create_library",
     "tp_create_library_item",
     "tp_create_note",
+    "tp_create_strength_library_item",
     "tp_create_strength_workout",
     "tp_create_workout",
     "tp_create_zones",
     "tp_log_metrics",
+    "tp_save_strength_workout_to_library",
     "tp_schedule_library_workout",
+    "tp_schedule_strength_library_item",
     "tp_upload_workout_file",
 }
 
@@ -1895,7 +2109,9 @@ async def _h_analyze(args): return await tp_analyze_workout(workout_id=args["wor
 async def _h_search_exercises(args):
     return await tp_search_exercises(
         query=args.get("query", ""), limit=args.get("limit", 20),
-        muscle_group=args.get("muscle_group"))
+        muscle_group=args.get("muscle_group"),
+        include_own=args.get("include_own") is True
+        or str(args.get("include_own")).strip().lower() == "true")
 
 @_handler("tp_create_strength_workout")
 async def _h_create_strength(args):
@@ -1928,6 +2144,73 @@ async def _h_update_strength(args):
 @_handler("tp_delete_strength_workout")
 async def _h_delete_strength(args):
     return await tp_delete_strength_workout(workout_id=args["workout_id"])
+
+@_handler("tp_create_strength_library_item")
+async def _h_create_strength_library_item(args):
+    return await tp_create_strength_library_item(
+        library_id=args["library_id"], title=args["title"],
+        blocks=args.get("blocks") or [], instructions=args.get("instructions"))
+
+@_handler("tp_get_strength_library_item")
+async def _h_get_strength_library_item(args):
+    return await tp_get_strength_library_item(item_id=args["item_id"])
+
+@_handler("tp_get_strength_library_items")
+async def _h_get_strength_library_items(args):
+    return await tp_get_strength_library_items(library_id=args["library_id"])
+
+@_handler("tp_schedule_strength_library_item")
+async def _h_schedule_strength_library_item(args):
+    return await tp_schedule_strength_library_item(item_id=args["item_id"], date=args["date"])
+
+@_handler("tp_update_strength_library_item")
+async def _h_update_strength_library_item(args):
+    return await tp_update_strength_library_item(
+        item_id=args["item_id"], blocks=args.get("blocks"), title=args.get("title"),
+        instructions=args.get("instructions"), mode=args.get("mode", "replace"))
+
+@_handler("tp_copy_strength_library_item")
+async def _h_copy_strength_library_item(args):
+    return await tp_copy_strength_library_item(
+        item_id=args["item_id"], library_id=args["library_id"], title=args.get("title"))
+
+@_handler("tp_save_strength_workout_to_library")
+async def _h_save_strength_workout_to_library(args):
+    return await tp_save_strength_workout_to_library(
+        workout_id=args["workout_id"], library_id=args["library_id"], title=args.get("title"))
+
+@_handler("tp_get_exercise")
+async def _h_get_exercise(args):
+    return await tp_get_exercise(exercise_id=args["exercise_id"])
+
+@_handler("tp_get_own_exercises")
+async def _h_get_own_exercises(args):
+    return await tp_get_own_exercises()
+
+@_handler("tp_create_exercise")
+async def _h_create_exercise(args):
+    return await tp_create_exercise(
+        title=args["title"], parameters=args.get("parameters") or [],
+        video_url=args.get("video_url"), instructions=args.get("instructions"),
+        primary_muscle_groups=args.get("primary_muscle_groups"),
+        secondary_muscle_groups=args.get("secondary_muscle_groups"))
+
+@_handler("tp_update_exercise")
+async def _h_update_exercise(args):
+    return await tp_update_exercise(
+        exercise_id=args["exercise_id"], title=args.get("title"),
+        parameters=args.get("parameters"), video_url=args.get("video_url"),
+        instructions=args.get("instructions"),
+        primary_muscle_groups=args.get("primary_muscle_groups"),
+        secondary_muscle_groups=args.get("secondary_muscle_groups"))
+
+@_handler("tp_delete_exercise")
+async def _h_delete_exercise(args):
+    return await tp_delete_exercise(exercise_id=args["exercise_id"])
+
+@_handler("tp_delete_strength_library_item")
+async def _h_delete_strength_library_item(args):
+    return await tp_delete_strength_library_item(item_id=args["item_id"])
 
 # --- Fitness & Summary ---
 @_handler("tp_get_fitness")
@@ -2197,6 +2480,10 @@ async def call_tool(name: str, arguments: dict[str, Any] | None = None) -> list[
     args = dict(arguments or {})
     # Extract athlete targeting for coach accounts and set context var
     athlete_target = args.pop("athlete", None)
+    # Account-level tools have no `athlete` in their schema; a stray one must
+    # not send them through athlete resolution (unknown name → AUTH_INVALID).
+    if name in _ATHLETE_EXEMPT_TOOLS:
+        athlete_target = None
     token = athlete_override.set(athlete_target)
     try:
         handler = _TOOL_HANDLERS.get(name)
