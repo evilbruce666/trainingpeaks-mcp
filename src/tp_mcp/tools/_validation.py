@@ -94,8 +94,10 @@ class CreateWorkoutInput(BaseModel):
             raise ValueError("Provide only one of structure or structured_workout")
         # A distance alone is a complete planned workout too (a race leg: 10 km,
         # no target time) — TP stores distancePlanned without totalTimePlanned.
+        # A Day Off is a calendar marker, not a session: it has no length.
         if (
-            self.duration_minutes is None
+            self.sport != "DayOff"
+            and self.duration_minutes is None
             and self.distance_km is None
             and self.structure is None
             and self.structured_workout is None

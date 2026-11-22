@@ -142,6 +142,12 @@ class TestCreateWorkoutInput:
         result = CreateWorkoutInput(date="2025-06-01", sport="Run", title="10K", distance_km=10)
         assert result.distance_km == 10 and result.duration_minutes is None
 
+    def test_day_off_needs_no_length(self):
+        # A rest day is a calendar marker. Verified live 2026-11-22 — TP stores
+        # workout type 7 with totalTimePlanned left empty.
+        result = CreateWorkoutInput(date="2025-06-01", sport="DayOff", title="Отдых")
+        assert result.duration_minutes is None
+
     def test_nothing_to_plan_is_still_rejected(self):
         with pytest.raises(ValidationError, match="distance_km"):
             CreateWorkoutInput(date="2025-06-01", sport="Run", title="empty")
