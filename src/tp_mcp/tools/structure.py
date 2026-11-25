@@ -23,6 +23,53 @@ from tp_mcp.tools._validation import format_validation_error
 
 logger = logging.getLogger("tp-mcp")
 
+#: TP sport family id of swimming (SPORT_TYPE_MAP / library `workoutTypeId`).
+SWIM_FAMILY_ID = 1
+
+
+def with_distance_unit(structure: Any, sport_family_id: Any) -> Any:
+    """A distance-based native structure needs `visualizationDistanceUnit`.
+
+    The TP web app prints that value after every step length; a structure
+    written without it shows «undefined» instead of metres (seen 2026-11-25 on
+    swim templates created through the raw-structure path). Templates built in
+    the TP UI carry "meter" for swims and "kilometer" for everything else, and
+    omit the key for time-only structures - mirrored here. A duration-based
+    structure with some distance steps («30 мин + 3×1 км») carries the unit too.
+
+    Only fills a MISSING value, and only when the sport is known. Returns a
+    shallow copy when it adds the key; the caller's dict is never mutated.
+    """
+    if not isinstance(structure, dict):
+        return structure
+    if structure.get("primaryLengthMetric") != "distance" and not _has_distance_step(
+        structure.get("structure")
+    ):
+        return structure
+    if structure.get("visualizationDistanceUnit") or sport_family_id is None:
+        return structure
+    out = dict(structure)
+    out["visualizationDistanceUnit"] = (
+        "meter" if sport_family_id == SWIM_FAMILY_ID else "kilometer"
+    )
+    return out
+
+
+_DISTANCE_UNITS = {"meter", "kilometer", "mile", "yard"}
+
+
+def _has_distance_step(node: Any) -> bool:
+    """True when any step of a native block list is measured in distance."""
+    if isinstance(node, list):
+        return any(_has_distance_step(x) for x in node)
+    if not isinstance(node, dict):
+        return False
+    length = node.get("length")
+    if isinstance(length, dict) and length.get("unit") in _DISTANCE_UNITS:
+        return True
+    return _has_distance_step(node.get("steps"))
+
+
 # Valid intensity classes for workout steps
 INTENSITY_CLASSES = {"warmUp", "active", "rest", "coolDown", "other"}
 

@@ -21,6 +21,7 @@ from tp_mcp.tools.structure import (
     compute_duration_seconds,
     compute_if_tss,
     parse_structure_input,
+    with_distance_unit,
 )
 
 logger = logging.getLogger("tp-mcp")
@@ -103,8 +104,12 @@ def _validate_structured_workout(structured_workout: dict[str, Any]) -> str | No
 
 def _encode_structured_workout(
     structured_workout: dict[str, Any] | None,
+    sport_family_id: int | None = None,
 ) -> tuple[str | None, str | None]:
-    """Serialize a TP native workout structure for write endpoints."""
+    """Serialize a TP native workout structure for write endpoints.
+
+    With a known sport, a distance-based structure gets its missing
+    `visualizationDistanceUnit` (see `with_distance_unit`)."""
     if structured_workout is None:
         return None, None
 
@@ -113,7 +118,7 @@ def _encode_structured_workout(
         return None, error
 
     try:
-        return json.dumps(structured_workout), None
+        return json.dumps(with_distance_unit(structured_workout, sport_family_id)), None
     except (TypeError, ValueError) as e:
         return None, f"structured_workout must be JSON-serializable: {e}"
 
@@ -490,7 +495,7 @@ async def tp_create_workout(
             "message": structure_payload.error,
         }
     raw_structure_payload, raw_structure_error = _encode_structured_workout(
-        params.structured_workout,
+        params.structured_workout, family_id,
     )
     if raw_structure_error is not None:
         return {
@@ -748,7 +753,10 @@ async def tp_update_workout(
                 if params.tss_planned is None:
                     existing.pop("tssPlanned", None)
         elif raw_structure_payload is not None:
-            existing["structure"] = raw_structure_payload
+            # Re-encode now that the workout's sport is known (after any sport change).
+            existing["structure"], _ = _encode_structured_workout(
+                params.structured_workout, existing.get("workoutTypeFamilyId")
+            )
 
         # PUT updated workout
         put_endpoint = f"/fitness/v6/athletes/{athlete_id}/workouts/{params.workout_id}"

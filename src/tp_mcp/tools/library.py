@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from tp_mcp.client import TPClient
 from tp_mcp.client.context import athlete_override
 from tp_mcp.tools._validation import WorkoutIdInput, format_validation_error
+from tp_mcp.tools.structure import with_distance_unit
 
 logger = logging.getLogger("tp-mcp")
 
@@ -426,7 +427,9 @@ async def tp_create_library_item(
         if structure is not None:
             # Library items use nested object, NOT double-serialised string.
             # Backfill polyline/range so TP renders the structure preview.
-            payload["structure"] = _ensure_structure_preview(structure)
+            payload["structure"] = with_distance_unit(
+                _ensure_structure_preview(structure), sport_family_id
+            )
 
         endpoint = f"/exerciselibrary/v1/libraries/{lib_validated.workout_id}/items"
         response = await client.post(endpoint, json=payload)
@@ -544,10 +547,12 @@ async def tp_update_library_item(
             existing["distancePlanned"] = distance_meters
         if description is not None:
             existing["description"] = description
-        if structure is not None:
-            existing["structure"] = _ensure_structure_preview(structure)
         if workout_type_id is not None:
             existing["workoutTypeId"] = workout_type_id
+        if structure is not None:
+            existing["structure"] = with_distance_unit(
+                _ensure_structure_preview(structure), existing.get("workoutTypeId")
+            )
         if workout_sub_type_id is not None:
             existing["workoutSubTypeId"] = workout_sub_type_id
 
@@ -646,7 +651,9 @@ def _template_workout_payload(
         payload["workoutSubTypeId"] = item["workoutSubTypeId"]
     if item.get("structure"):
         # Calendar workouts carry structure as a JSON string
-        payload["structure"] = json.dumps(item["structure"])
+        payload["structure"] = json.dumps(
+            with_distance_unit(item["structure"], sport_id)
+        )
     return payload
 
 

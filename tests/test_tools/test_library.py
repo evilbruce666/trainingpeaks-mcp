@@ -611,3 +611,84 @@ class TestDeleteLibraryItem:
 
         assert result["isError"] is True
         assert result["error_code"] == "NOT_FOUND"
+
+
+def _distance_structure() -> dict:
+    return {"primaryLengthMetric": "distance",
+            "primaryIntensityMetric": "percentOfThresholdPace",
+            "primaryIntensityTargetOrRange": "range",
+            "polyline": [[0, 0], [1, 0]],
+            "structure": [{"type": "step", "length": {"value": 1, "unit": "repetition"},
+                           "steps": [{"name": "Разминка",
+                                      "length": {"value": 300, "unit": "meter"},
+                                      "targets": [{"minValue": 75, "maxValue": 85}]}]}]}
+
+
+class TestDistanceUnit:
+    """A distance structure without `visualizationDistanceUnit` renders
+    «undefined» after every step length in the TP web app (2026-11-25: eight swim
+    templates saved through the raw-structure path). Older tests only used
+    duration structures, which legitimately omit the key."""
+
+    def test_swim_gets_meter_and_other_sports_kilometer(self):
+        from tp_mcp.tools.structure import with_distance_unit
+        assert with_distance_unit(_distance_structure(), 1)["visualizationDistanceUnit"] == "meter"
+        assert with_distance_unit(_distance_structure(), 3)["visualizationDistanceUnit"] == "kilometer"
+
+    def test_leaves_alone_what_it_should_not_touch(self):
+        from tp_mcp.tools.structure import with_distance_unit
+        src = _distance_structure()
+        out = with_distance_unit(src, 1)
+        assert "visualizationDistanceUnit" not in src and out is not src   # caller not mutated
+        kept = dict(src, visualizationDistanceUnit="kilometer")
+        assert with_distance_unit(kept, 1) is kept                         # explicit value wins
+        timed = dict(src, primaryLengthMetric="duration", structure=[
+            {"type": "step", "length": {"value": 1, "unit": "repetition"},
+             "steps": [{"length": {"value": 600, "unit": "second"}}]}])
+        assert with_distance_unit(timed, 1) is timed                       # UI omits it for time
+        # «30 мин + 3×1 км»: по времени, но часть шагов в метрах — единица нужна.
+        mixed = dict(src, primaryLengthMetric="duration")
+        assert with_distance_unit(mixed, 3)["visualizationDistanceUnit"] == "kilometer"
+        assert with_distance_unit(src, None) is src                        # sport unknown
+        assert with_distance_unit(None, 1) is None
+
+    @pytest.mark.asyncio
+    async def test_create_and_update_write_the_unit(self):
+        with patch("tp_mcp.tools.library.TPClient") as mock_client:
+            inst = AsyncMock()
+            inst.ensure_athlete_id = AsyncMock(return_value=123)
+            inst.post = AsyncMock(return_value=APIResponse(
+                success=True, data={"exerciseLibraryItemId": 7}))
+            mock_client.return_value.__aenter__.return_value = inst
+            await tp_create_library_item(
+                library_id="1", name="Swim", sport_family_id=1, sport_type_id=1,
+                structure=_distance_structure())
+        assert inst.post.call_args[1]["json"]["structure"]["visualizationDistanceUnit"] == "meter"
+
+        existing = {"exerciseLibraryItemId": 20, "itemName": "Run", "workoutTypeId": 3}
+        with patch("tp_mcp.tools.library.TPClient") as mock_client:
+            inst = AsyncMock()
+            inst.ensure_athlete_id = AsyncMock(return_value=123)
+            inst.get = AsyncMock(return_value=APIResponse(success=True, data=[existing]))
+            inst.put = AsyncMock(return_value=APIResponse(success=True, data=None))
+            mock_client.return_value.__aenter__.return_value = inst
+            await tp_update_library_item(library_id="1", item_id="20",
+                                         structure=_distance_structure())
+        assert inst.put.call_args[1]["json"]["structure"]["visualizationDistanceUnit"] == "kilometer"
+
+    def test_scheduling_an_old_template_fills_the_unit(self):
+        import json as _json
+
+        from tp_mcp.tools.library import _template_workout_payload
+        item = {"workoutTypeId": 1, "itemName": "Swim", "structure": _distance_structure()}
+        payload = _template_workout_payload(item, "2026-12-01", 123)
+        assert _json.loads(payload["structure"])["visualizationDistanceUnit"] == "meter"
+
+    def test_raw_workout_structure_gets_the_unit(self):
+        import json as _json
+
+        from tp_mcp.tools.workouts import _encode_structured_workout
+        raw, err = _encode_structured_workout(_distance_structure(), 1)
+        assert err is None and _json.loads(raw)["visualizationDistanceUnit"] == "meter"
+        raw, _ = _encode_structured_workout(_distance_structure())      # sport unknown
+        assert "visualizationDistanceUnit" not in _json.loads(raw)
